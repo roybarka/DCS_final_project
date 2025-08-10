@@ -9,7 +9,6 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 # -------- מבנה הנתונים --------
 angle_distance_data = [None] * 180
-angle_Light_data = [None] * 180
 
 # -------- מחלקת בקר --------
 class MSPController:
@@ -38,7 +37,6 @@ def listen_for_controller(controller, stop_event):
                 angle_str, dist_str = data.split(":")
                 angle_raw = int(angle_str)
                 distance_us = int(dist_str)
-                # אם מגיע זמן-דופק ב־µs וממיר ל־cm:
                 distance = distance_us // 58.0
                 if 0 <= angle_raw < 180:
                     angle_distance_data[angle_raw] = distance
@@ -52,24 +50,6 @@ def listen_for_controller(controller, stop_event):
                         if left is not None and right is not None and mid is not None:
                             if (abs(mid - left) > 30) and (abs(mid - right) > 30):
                                 angle_distance_data[angle_raw - 1] = (left + right) // 2
-            except ValueError:
-                continue
-
-
-def Light_listen_for_controller(controller, stop_event):
-    while not stop_event.is_set():
-        data = controller.read_data()
-        if data:
-            try:
-                angle_str, dist_str = data.split(":")
-                angle_raw = int(angle_str)
-                Light_strength = int(dist_str)
-                # אם מגיע זמן-דופק ב־µs וממיר ל־cm:
-                if 0 <= angle_raw < 180:
-                    angle_Light_data[angle_raw] = Light_strength
-                    print(f"Angle {angle_raw}° = {Light_strength} cm")
-
-
             except ValueError:
                 continue
 
@@ -173,7 +153,12 @@ def debug_bar_plot_thread_tk(root, stop_event):
 
 def get_mode_from_user():
     print("\nSelect Mode:")
-    print("1 - Sonar Live Mode")
+    print("1 - Sonar Object detector Mode")
+    print("2 - Angle Motor Rotation")
+    print("3 - LDR Light  Detector")
+    print("4 - Object + Light detector")
+    print("5 - Load Scripts")
+    print("6 - Run Scripts")
     print("0 - Exit")
     mode = input("Enter mode number: ")
     return mode.strip()
@@ -219,7 +204,7 @@ def run_mode_1(controller):
 
 # -------- main --------
 def main():
-    port = "COM9"  # עדכן את הפורט לפי הצורך
+    port = "COM4"  # עדכן את הפורט לפי הצורך
     controller = MSPController(port)
 
     while True:
@@ -232,7 +217,6 @@ def main():
         if choice == '1':
             controller.send_command('1')
             stop_event = threading.Event()
-
             # הפעלת טרד האזנה בלבד
             listener_thread = threading.Thread(target=listen_for_controller, args=(controller, stop_event))
             listener_thread.daemon = True
@@ -257,7 +241,6 @@ def main():
             controller.send_command(degree + '\n')
 
             stop_event = threading.Event()
-
             # הפעלת טרד האזנה בלבד
             listener_thread = threading.Thread(target=listen_for_controller, args=(controller, stop_event))
             listener_thread.daemon = True
@@ -276,9 +259,8 @@ def main():
         if choice == '3':
             controller.send_command('3')
             stop_event = threading.Event()
-
             # הפעלת טרד האזנה בלבד
-            listener_thread = threading.Thread(target=Light_listen_for_controller, args=(controller, stop_event))
+            listener_thread = threading.Thread(target=listen_for_controller, args=(controller, stop_event))
             listener_thread.daemon = True
             listener_thread.start()
 
@@ -292,8 +274,8 @@ def main():
             listener_thread.join()
             print("Exited Mode 1.")
 
-    controller.close()
 
+    controller.close()
 
 if __name__ == "__main__":
     main()
