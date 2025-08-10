@@ -21,6 +21,8 @@ extern void send_trigger_pulse(int);
 extern void ser_output(char *);
 extern void send_LDR(int, int);
 extern int LDRmeas(void);
+extern void init_echo_capture(void);
+extern void init_trigger_gpio(void);
 
 // --- LCD configuration & API (unchanged) ---
 #ifdef CHECKBUSY

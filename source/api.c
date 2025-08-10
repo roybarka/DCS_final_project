@@ -19,6 +19,10 @@ int avg_meas;
 // We map deg  [0..180] to CCR1 = 600 + 10*deg.
 //------------------------------------------------------------
 void  Objects_Detector(){
+    init_trigger_gpio();
+    init_echo_capture();
+    __bis_SR_register(GIE);
+
     while(state==state1){
         deg = 600;
         TACCR1 = deg;
@@ -48,7 +52,7 @@ void Telemeter(){
     TA1CTL |= TASSEL_2 | MC_2;
     __delay_cycles(1000000);
     int j = 0;
-    for(j=0 ; j<20; j++) {
+    for(j=0 ; j<5; j++) {
         send_trigger_pulse(deg);
         __delay_cycles(1000000);
     }

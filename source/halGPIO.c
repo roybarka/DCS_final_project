@@ -18,6 +18,11 @@ char newline[] = " \r\n";
 char dst_char[5];
 char deg_char[7];
 volatile int meas_ready;
+// ---- Capture state (shared with ISR) ----
+volatile unsigned int t_rise = 0, t_fall = 0;
+volatile unsigned int diff_ticks = 0;
+volatile unsigned char cap_count = 0;
+volatile unsigned char measure_done = 0;
 
 //--------------------------------------------------------------------
 //             System Configuration  
@@ -33,6 +38,27 @@ void sysConfig(void){
 }
 //--------------------------------------------------------------------
 
+void init_trigger_gpio(void)
+{
+    // P1.7 as plain GPIO output (TRIG)  -- select I/O function
+    P1SEL  &= ~BIT7;   // GPIO, not peripheral
+    P1SEL2 &= ~BIT7;   // GPIO, not secondary function
+    P1DIR  |=  BIT7;   // output direction
+    P1OUT  &= ~BIT7;   // idle LOW (recommended by most HC-SR04 examples)
+}
+
+void init_echo_capture(void)
+{
+   // P2.1 -> TA1.1 CCI1A (ECHO input)
+   P2SEL |= BIT1;            // select timer function on P2.1
+   P2DIR &= ~BIT1;           // input
+
+   // Timer1_A: SMCLK (1 MHz), continuous mode
+   TA1CTL = TASSEL_2 | MC_2 | TAIE; // SMCLK, continuous up to 0xFFFF +TAIE: enable overflow interrupt (TAIFG)
+
+   // CCR1 capture on both edges, input = CCI1A, synchronized, interrupt enabled
+   TA1CCTL1 = CM_3 | CCIS_0 | SCS | CAP | CCIE;
+}
 
 void ser_output(char *str){
     while(*str != 0) {
@@ -54,19 +80,31 @@ void ADCconfig(void){
 //*********************************************************************
 
 #pragma vector = TIMER1_A1_VECTOR
- __interrupt void Timer_A(void) {
-     temp[i] = TA1CCR1;
-     i += 1;
-     TA1CCTL1 &= ~CCIFG;
-     TA1CCTL2 &= ~CCIFG;
-     TA1CCTL0 &= ~CCIFG;
-     if (i == 2) {
-         unsigned int dt = (unsigned int)(temp[1] - temp[0]); // 16bit wrap
-         diff = (float)((unsigned int)dt);
-         //meas_ready = 1;
-         i = 0;
-     }
- }
+__interrupt void TIMER1_A1_ISR(void)
+{
+    switch (__even_in_range(TA1IV, TA1IV_TAIFG)) {
+    case TA1IV_NONE: break;
+    case TA1IV_TACCR1:
+        if (cap_count == 0) {
+            t_rise = TA1CCR1;
+            cap_count = 1;
+            // DIAG: prove we got here at least once
+            __bic_SR_register_on_exit(LPM0_bits); // wake so you can see cap_count==1
+        } else {
+            t_fall = TA1CCR1;
+            if (t_fall >= t_rise) diff_ticks = t_fall - t_rise;
+            else                  diff_ticks = (unsigned)(t_fall + 65536u - t_rise);
+            measure_done = 1;
+            __bic_SR_register_on_exit(LPM0_bits); // wake main for the print
+        }
+        break;
+    case TA1IV_TACCR2:  break;
+    case TA1IV_TAIFG:  // overflow = timeout (~65.536 ms @ 1MHz)
+            measure_done = 2;                            // mark "no echo"
+            __bic_SR_register_on_exit(LPM0_bits);
+            break;
+    }
+}
  //*********************************************************************
  //                        ADC10 ISR
  //*********************************************************************
@@ -77,27 +115,45 @@ __interrupt void ADC10_ISR(void) {
 //--------------------------------------------------------------------
 
 void send_trigger_pulse(int deg) {
-    //TA1CCTL1 &= ~CCIFG;
-    TA1CCTL1 &= ~CCIFG;
-    TA1CTL |= TAIE;
-    i = 0;
-    meas_ready = 0;
+    {
+        // Prepare capture state
+        cap_count    = 0;
+        measure_done = 0;
+        TA1CCTL1 &= ~(CCIFG | COV);   // clear any pending flag/overflow
+        TA1CTL   |= TACLR;            // reset TAR and divider to 0 before starting
 
-    P1OUT |= BIT7;
-    __delay_cycles(20);   // ~20µs at 1MHz: DCO=1MHz => 1us/cycle
-    P1OUT &= ~BIT7;
-    //while(meas_ready == 0){};
-    __delay_cycles(20000);
+        // Emit >=10 us HIGH pulse on TRIG (P1.7)
+        P1OUT |=  BIT7;
+        __delay_cycles(2000);   // ~12 µs at 1 MHz (meets > 10 µs spec)
+        P1OUT &= ~BIT7;
 
-    unsigned long ticks = (unsigned long)diff;
-    ltoa(ticks, dst_char);
-    ltoa(deg, deg_char);
+        // Wait here until ISR captures both edges and signals completion.
+        // Use LPM0 so SMCLK (Timer1_A clock) keeps running.
+        while (!measure_done) {
+            __bis_SR_register(LPM0_bits | GIE);
+            __no_operation();
+        }
+        if (measure_done == 2) {
+            ser_output("No echo / out of range\r\n");
+            return;
+        }
+        // Convert microseconds to centimeters: us/58
+        float distance_cm = ((float)diff_ticks) / 58.0f;   // HC-SR04 formula
 
-    ser_output(deg_char);
-    ser_output(":");
-    ser_output(dst_char);
-    ser_output(newline);
-    //TA1CCTL1 &= ~CCIE;
+        // Print "Distance: <int>.<frac> cm"
+        char ibuf[8], fbuf[8], degbuf[8];
+        unsigned int d_int  = (unsigned int)floorf(distance_cm);
+        unsigned int d_frac = (unsigned int)floorf((distance_cm - d_int) * 100.0f + 0.5f); // 2 decimals
+
+        //ser_output("Distance: ");
+        ltoa(deg, degbuf);  ser_output(degbuf);
+        ser_output(":");
+        ltoa(diff_ticks, ibuf);  ser_output(ibuf);
+
+        //if (d_frac < 10) ser_output("0");
+        //ltoa(d_frac, fbuf); ser_output(fbuf);
+        ser_output("\r\n");
+    }
 
 }
 //--------------------------------------------------------------------
