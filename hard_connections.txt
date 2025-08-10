@@ -13,6 +13,5 @@ LDR 2 ----- P1.3 (ADC)
 PushButtens
 PB1   -----
 
-בדיקת שינויי
-asdasdADFASDFASDF
+
 
