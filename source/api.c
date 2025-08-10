@@ -30,7 +30,7 @@ void  Objects_Detector(){
         TACTL = TASSEL_2 | MC_1;
         TA1CTL = TASSEL_2 | MC_2;
         __delay_cycles(100000);
-        for (iter = 0; iter < 180; iter++) {
+        for (iter = 0; iter < 180 && state==state1; iter++) {
                 deg += 10;
                 TACCR1 = deg;
                 __delay_cycles(100000);
@@ -52,7 +52,7 @@ void Telemeter(){
     TA1CTL |= TASSEL_2 | MC_2;
     __delay_cycles(1000000);
     int j = 0;
-    for(j=0 ; j<5; j++) {
+    while(state==state2) {
         send_trigger_pulse(deg);
         __delay_cycles(1000000);
     }
@@ -71,7 +71,7 @@ void Light_Detector(){
         TACCTL1 = OUTMOD_7;
         TACTL = TASSEL_2 | MC_1;
         __delay_cycles(100000);
-        for (iter = 0; iter < 180; iter++) {
+        for (iter = 0; iter < 180 && state==state3; iter++) {
             deg += 10;
             TACCR1 = deg;
             __delay_cycles(100000);
