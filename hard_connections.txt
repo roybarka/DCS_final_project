@@ -1,0 +1,14 @@
+servo mottor
+PWM ------ AMP_out              
+AMP_ in -- P1.6 (Timer A0 - output mode)
+
+motion sensor
+Echo ------ P2.1 (Timer A1 input capture mode)
+Trig ------ P1.7
+
+LDR sensor 
+LDR 1 ----- P1.4 (ADC)
+LDR 2 ----- P1.3 (ADC)
+
+PushButtens
+PB1   -----

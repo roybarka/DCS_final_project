@@ -1,0 +1,82 @@
+#include  "../header/api.h"
+#include  "../header/halGPIO.h"
+#include "stdio.h"
+
+unsigned int count_num = 0;
+char string_lcd[5];
+
+int deg;
+int iter = 0;
+int deg_str;
+int deg_duty_cycle;
+int avg_meas;
+
+//-------------------------------------------------------------
+//                 Objects Detector
+// TA0 in up-mode with TA0CCR0 = 20000 @ SMCLK=1MHz -> 20 ms period (50 Hz).
+// Using TA0.1 (P1.6) with OUTMOD_7 (reset/set):
+// pulse width [ticks] = TACCR1; 1 tick = 1 µs => 600..2400 ticks = 0.6..2.4 ms
+// We map deg  [0..180] to CCR1 = 600 + 10*deg.
+//------------------------------------------------------------
+void  Objects_Detector(){
+    while(state==state1){
+        deg = 600;
+        TACCR1 = deg;
+        TACCTL1 = OUTMOD_7;
+        TACTL = TASSEL_2 | MC_1;
+        TA1CTL = TASSEL_2 | MC_2;
+        __delay_cycles(100000);
+        for (iter = 0; iter < 180; iter++) {
+                deg += 10;
+                TACCR1 = deg;
+                __delay_cycles(100000);
+                send_trigger_pulse(iter);
+
+            }
+    }
+
+}
+//-------------------------------------------------------------
+//                Telemeter
+//------------------------------------------------------------
+void Telemeter(){
+    deg = atoi(delay_array);
+    deg_duty_cycle = 600 + deg * 10;
+    TACCR1 = deg_duty_cycle;
+    TACCTL1 = OUTMOD_7;
+    TACTL = TASSEL_2 | MC_1;
+    TA1CTL |= TASSEL_2 | MC_2;
+    __delay_cycles(1000000);
+    int j = 0;
+    for(j=0 ; j<20; j++) {
+        send_trigger_pulse(deg);
+        __delay_cycles(1000000);
+    }
+
+    state=state8;
+}
+
+//-------------------------------------------------------------
+//                Light_Detector
+//------------------------------------------------------------
+
+void Light_Detector(){
+    while(state==state3){
+        deg = 600;
+        TACCR1 = deg;
+        TACCTL1 = OUTMOD_7;
+        TACTL = TASSEL_2 | MC_1;
+        __delay_cycles(100000);
+        for (iter = 0; iter < 180; iter++) {
+            deg += 10;
+            TACCR1 = deg;
+            __delay_cycles(100000);
+            avg_meas = LDRmeas();
+            send_LDR(avg_meas, iter);
+            __delay_cycles(50000);
+
+            }
+    }
+
+}
+
