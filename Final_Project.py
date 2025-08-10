@@ -9,6 +9,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 # -------- מבנה הנתונים --------
 angle_distance_data = [None] * 180
+angle_Light_data = [None] * 180
+
 
 # -------- מחלקת בקר --------
 class MSPController:
@@ -29,7 +31,7 @@ class MSPController:
         self.ser.close()
 
 # -------- Thread לקריאת הנתונים --------
-def listen_for_controller(controller, stop_event):
+def listen_for_controller_Dist(controller, stop_event):
     while not stop_event.is_set():
         data = controller.read_data()
         if data:
@@ -50,6 +52,22 @@ def listen_for_controller(controller, stop_event):
                         if left is not None and right is not None and mid is not None:
                             if (abs(mid - left) > 30) and (abs(mid - right) > 30):
                                 angle_distance_data[angle_raw - 1] = (left + right) // 2
+            except ValueError:
+                continue
+
+def listen_for_controller_Light(controller, stop_event):
+    while not stop_event.is_set():
+        data = controller.read_data()
+        if data:
+            try:
+                angle_str, Light_str = data.split(":")
+                angle_raw = int(angle_str)
+                Light_Power = float(Light_str)
+                Light_Power = 100 *(Light_Power/1023)
+                if 0 <= angle_raw < 180:
+                    angle_Light_data[angle_raw] = Light_Power
+                    print(f"Angle {angle_raw}° = {Light_Power}% Light Power ")
+
             except ValueError:
                 continue
 
@@ -173,7 +191,7 @@ def run_mode_1(controller):
 
     # יצירת אירוע עצירה ו־threads
     stop_event = threading.Event()
-    listener_thread = threading.Thread(target=listen_for_controller, args=(controller, stop_event), daemon=True)
+    listener_thread = threading.Thread(target=listen_for_controller_Dist, args=(controller, stop_event), daemon=True)
     listener_thread.start()
 
     gui_thread = threading.Thread(target=sonar_gui, args=(stop_event,), daemon=True)
@@ -218,7 +236,7 @@ def main():
             controller.send_command('1')
             stop_event = threading.Event()
             # הפעלת טרד האזנה בלבד
-            listener_thread = threading.Thread(target=listen_for_controller, args=(controller, stop_event))
+            listener_thread = threading.Thread(target=listen_for_controller_Dist, args=(controller, stop_event))
             listener_thread.daemon = True
             listener_thread.start()
 
@@ -242,7 +260,7 @@ def main():
 
             stop_event = threading.Event()
             # הפעלת טרד האזנה בלבד
-            listener_thread = threading.Thread(target=listen_for_controller, args=(controller, stop_event))
+            listener_thread = threading.Thread(target=listen_for_controller_Light, args=(controller, stop_event))
             listener_thread.daemon = True
             listener_thread.start()
 
@@ -259,8 +277,7 @@ def main():
         if choice == '3':
             controller.send_command('3')
             stop_event = threading.Event()
-            # הפעלת טרד האזנה בלבד
-            listener_thread = threading.Thread(target=listen_for_controller, args=(controller, stop_event))
+            listener_thread = threading.Thread(target=listen_for_controller_Light, args=(controller, stop_event))
             listener_thread.daemon = True
             listener_thread.start()
 
@@ -272,7 +289,7 @@ def main():
 
             stop_event.set()
             listener_thread.join()
-            print("Exited Mode 1.")
+            print("Exited Mode 3.")
 
 
     controller.close()
