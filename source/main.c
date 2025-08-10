@@ -29,7 +29,7 @@ void main(void){
 	    Telemeter();
 	    break;
 	case state3:
-        Light_Detector();
+	    Light_Detector();
         break;
 
 
