@@ -17,6 +17,8 @@ volatile float diff;
 char newline[] = " \r\n";
 char dst_char[5];
 char deg_char[7];
+char Light_char[5];
+
 volatile int meas_ready;
 // ---- Capture state (shared with ISR) ----
 volatile unsigned int t_rise = 0, t_fall = 0;
@@ -114,7 +116,7 @@ __interrupt void ADC10_ISR(void) {
 }
 //--------------------------------------------------------------------
 
-void send_trigger_pulse(int deg) {
+unsigned int send_trigger_pulse() {
     {
         // Prepare capture state
         cap_count    = 0;
@@ -137,6 +139,8 @@ void send_trigger_pulse(int deg) {
             ser_output("No echo / out of range\r\n");
             return;
         }
+
+        /*
         // Convert microseconds to centimeters: us/58
         float distance_cm = ((float)diff_ticks) / 58.0f;   // HC-SR04 formula
 
@@ -153,11 +157,13 @@ void send_trigger_pulse(int deg) {
         //if (d_frac < 10) ser_output("0");
         //ltoa(d_frac, fbuf); ser_output(fbuf);
         ser_output("\r\n");
+        */
+        return diff_ticks;
     }
 
 }
 //--------------------------------------------------------------------
-void send_LDR(int meas, int iter){
+void send_meas(unsigned int meas, unsigned int iter){
     // Convert to string and print
     ltoa(iter, deg_char);
     ltoa(meas, dst_char);
@@ -169,7 +175,24 @@ void send_LDR(int meas, int iter){
 }
 //--------------------------------------------------------------------
 
-int LDRmeas(void){
+void send_two_meas(unsigned int iter,unsigned int avg_meas,unsigned int dist)
+{
+    // Convert to string and print
+    ltoa(iter, deg_char);
+    ltoa(avg_meas, Light_char);
+    ltoa(dist, dst_char);
+
+    ser_output(deg_char);
+    ser_output(":");
+    ser_output(dst_char);
+    ser_output(":");
+    ser_output(Light_char);
+    ser_output(newline);
+}
+
+//--------------------------------------------------------------------
+
+unsigned int LDRmeas(void){
     ADC10CTL0 &= ~ENC; //
     ADC10CTL1 = (ADC10CTL1 & ~INCH_7) | INCH_4;
     ADC10CTL0 |= ENC + ADC10SC;         // Start conversion
@@ -385,6 +408,9 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
     }
     else if(UCA0RXBUF == '3' && delay_flag == 0){
         state = state3;
+    }
+    else if(UCA0RXBUF == '4' && delay_flag == 0){
+        state = state4;
     }
     else if(UCA0RXBUF == '5' && delay_flag == 0){
         state = state5;

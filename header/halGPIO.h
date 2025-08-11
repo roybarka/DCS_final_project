@@ -17,12 +17,13 @@ extern volatile float diff;
 // Public HAL/API
 extern void sysConfig(void);
 extern void put_on_lcd(char*, unsigned int);
-extern void send_trigger_pulse(int);
+extern unsigned int send_trigger_pulse();
 extern void ser_output(char *);
-extern void send_LDR(int, int);
-extern int LDRmeas(void);
+extern void send_meas(unsigned int,unsigned int);
+extern unsigned int LDRmeas(void);
 extern void init_echo_capture(void);
 extern void init_trigger_gpio(void);
+extern void send_two_meas(unsigned int ,unsigned int ,unsigned int );
 
 // --- LCD configuration & API (unchanged) ---
 #ifdef CHECKBUSY

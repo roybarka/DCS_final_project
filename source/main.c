@@ -31,7 +31,9 @@ void main(void){
 	case state3:
 	    Light_Detector();
         break;
-
+    case state4:
+        Object_and_Light_Detector();
+        break;
 
 
 	}

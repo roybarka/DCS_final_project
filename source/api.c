@@ -9,7 +9,7 @@ int deg;
 int iter = 0;
 int deg_str;
 int deg_duty_cycle;
-int avg_meas;
+unsigned int avg_meas;
 
 //-------------------------------------------------------------
 //                 Objects Detector
@@ -34,7 +34,8 @@ void  Objects_Detector(){
                 deg += 10;
                 TACCR1 = deg;
                 __delay_cycles(100000);
-                send_trigger_pulse(iter);
+                int dist = send_trigger_pulse();
+                send_meas(dist,iter);
 
             }
     }
@@ -53,7 +54,8 @@ void Telemeter(){
     __delay_cycles(1000000);
     int j = 0;
     while(state==state2) {
-        send_trigger_pulse(deg);
+        int dist = send_trigger_pulse();
+        send_meas(dist,deg);
         __delay_cycles(1000000);
     }
 
@@ -76,7 +78,31 @@ void Light_Detector(){
             TACCR1 = deg;
             __delay_cycles(100000);
             avg_meas = LDRmeas();
-            send_LDR(avg_meas, iter);
+            send_meas(avg_meas, iter);
+            __delay_cycles(50000);
+
+            }
+    }
+
+}
+void Object_and_Light_Detector(){
+    init_trigger_gpio();
+    init_echo_capture();
+    __bis_SR_register(GIE);
+
+    while(state==state4){
+        deg = 600;
+        TACCR1 = deg;
+        TACCTL1 = OUTMOD_7;
+        TACTL = TASSEL_2 | MC_1;
+        __delay_cycles(100000);
+        for (iter = 0; iter < 180 && state==state4; iter++) {
+            deg += 10;
+            TACCR1 = deg;
+            __delay_cycles(100000);
+            avg_meas = LDRmeas();
+            unsigned int dist = send_trigger_pulse();
+            send_two_meas(iter,avg_meas, dist);
             __delay_cycles(50000);
 
             }

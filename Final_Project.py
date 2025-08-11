@@ -55,21 +55,40 @@ def listen_for_controller_Dist(controller, stop_event):
             except ValueError:
                 continue
 
-def listen_for_controller_Light(controller, stop_event):
+def listen_for_controller_Object_and_Light(controller, stop_event):
     while not stop_event.is_set():
         data = controller.read_data()
         if data:
             try:
-                angle_str, Light_str = data.split(":")
+                angle_str,dist_str, Light_str = data.split(":")
                 angle_raw = int(angle_str)
+                distance_us = int(dist_str)
+                distance = distance_us // 58.0
                 Light_Power = float(Light_str)
                 Light_Power = 100 *(Light_Power/1023)
+
                 if 0 <= angle_raw < 180:
                     angle_Light_data[angle_raw] = Light_Power
-                    print(f"Angle {angle_raw}° = {Light_Power}% Light Power ")
+                    print(f"Angle {angle_raw}° : Distance {distance} : {Light_Power}% Light Power ")
 
             except ValueError:
                 continue
+
+def listen_for_controller_Light(controller, stop_event):
+     while not stop_event.is_set():
+            data = controller.read_data()
+            if data:
+                try:
+                    angle_str, Light_str = data.split(":")
+                    angle_raw = int(angle_str)
+                    Light_Power = float(Light_str)
+                    Light_Power = 100 *(Light_Power/1023)
+                    if 0 <= angle_raw < 180:
+                        angle_Light_data[angle_raw] = Light_Power
+                        print(f"Angle {angle_raw}° = {Light_Power}% Light Power ")
+
+                except ValueError:
+                    continue
 
 # -------- Thread ל-GUI פולאר --------
 def sonar_gui(stop_event):
@@ -312,6 +331,21 @@ def main():
             # ה־stop_event סומן מתוך הכפתור; מחכים שה־listener ימות בצורה מסודרת
             listener_thread.join(timeout=2.0)
             print("Exited Mode 3.")
+
+        if choice == '4':
+            controller.send_command('4')
+            stop_event = threading.Event()
+            listener_thread = threading.Thread(target=listen_for_controller_Object_and_Light, args=(controller, stop_event))
+            listener_thread.daemon = True
+            listener_thread.start()
+
+            print("Listening for data... use the GUI button to exit.")
+            # חלון קטן: בלחיצה שולח '8' ומסמן stop_event
+            wait_for_exit_gui_and_send_8(controller, stop_event, title="Mode 4 - LDR + HyperSonic")
+
+            # ה־stop_event סומן מתוך הכפתור; מחכים שה־listener ימות בצורה מסודרת
+            listener_thread.join(timeout=2.0)
+            print("Exited Mode 4.")
 
 
 
