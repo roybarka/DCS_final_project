@@ -45,7 +45,7 @@ void  Objects_Detector(){
 //                Telemeter
 //------------------------------------------------------------
 void Telemeter(){
-    deg = atoi(delay_array);
+    deg = atoi(deg_array);
     deg_duty_cycle = 600 + deg * 10;
     TACCR1 = deg_duty_cycle;
     TACCTL1 = OUTMOD_7;

@@ -6,8 +6,9 @@
 
 // Globals used across modules (keep as-is for now)
 extern enum FSMstate state;
+extern enum main_states Main;
 extern enum SYSmode lpm_mode;
-extern char delay_array[5];
+extern char deg_array[5];
 extern char string_array[16];
 extern int j;
 extern volatile int temp[2];

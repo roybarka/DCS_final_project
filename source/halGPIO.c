@@ -4,9 +4,10 @@
 #include <string.h>
 #include <math.h>
 
+#define RX_BUF_SIZE 256
+#define RX_EOF_CHAR '\n'
 
-
-char delay_array[5];
+char deg_array[5];
 volatile unsigned int i;
 int j=0;
 int delay_flag = 0;
@@ -25,6 +26,9 @@ volatile unsigned int t_rise = 0, t_fall = 0;
 volatile unsigned int diff_ticks = 0;
 volatile unsigned char cap_count = 0;
 volatile unsigned char measure_done = 0;
+
+
+char DataFromPC[80];
 
 //--------------------------------------------------------------------
 //             System Configuration  
@@ -385,16 +389,37 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
 #error Compiler not supported!
 #endif
 {
-    if (UCA0RXBUF == '1' && delay_flag == 0){
+    DataFromPC[j] = UCA0RXBUF;  // Get string from PC
+    j++;
+
+    switch(Main){
+    case detecor_sel:
+        if (DataFromPC[0] == '1') {state = state1; Main=detecor_sel;  j = 0;}
+        if (DataFromPC[0] == '2') {Main=Tele_get_deg;  j = 0;}
+        if (DataFromPC[0] == '3') {state = state3; Main=detecor_sel;  j = 0;}
+        if (DataFromPC[0] == '4') {state = state4; Main=detecor_sel;  j = 0;}
+        if (DataFromPC[0] == '8') {state = state8; Main=detecor_sel;  j = 0;}
+        break;
+
+    case Tele_get_deg:
+        if(DataFromPC[j-1] == RX_EOF_CHAR) {
+            strcpy(deg_array, DataFromPC);
+            state = state2; Main=detecor_sel;  j = 0;
+        }
+        break;
+    }
+
+
+    /*if (UCA0RXBUF == '1' && delay_flag == 0){
         state = state1;
     }
 
     else if(UCA0RXBUF == '2' || delay_flag){
 
         if (delay_flag == 1){
-                    delay_array[j] = UCA0RXBUF;
+                    deg_array[j] = UCA0RXBUF;
                     j++;
-                    if (delay_array[j-1] == '\n'){
+                    if (deg_array[j-1] == '\n'){
                         j = 0;
                         delay_flag = 0;
                         state_flag = 0;
@@ -427,7 +452,7 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
     else if(UCA0RXBUF == '9' && delay_flag == 0){
         state = state9;
         }
-
+*/
 
 
     switch(lpm_mode){

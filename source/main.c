@@ -6,11 +6,12 @@
 
 
 enum FSMstate state;
+enum main_states Main;
 enum SYSmode lpm_mode;
 
 
 void main(void){
-  
+  Main = detecor_sel;
   state = state8;
   lpm_mode = mode0;
   sysConfig();
