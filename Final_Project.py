@@ -189,19 +189,17 @@ def debug_bar_plot_thread_tk(root, stop_event):
     update_plot()
 
 def wait_for_exit_gui_and_send_8(controller, stop_event, title="Exit Mode"):
-    # חלון קטן עם כפתור יציאה. בלחיצה: שליחת '8', עצירת ה-listener וסגירת החלון.
     root = tk.Tk()
     root.title(title)
 
-    info = tk.Label(root, text="לחזור לתפריט בלי לטרמינל\n(נשלח '8' החוצה ונעצור האזנה)")
+    info = tk.Label(root, text="לחזור לתפריט (נשלח '8' ונעצור האזנה ו-GUI)")
     info.pack(padx=10, pady=10)
 
     def on_exit():
         try:
-            controller.send_command('8')  # שולח '8' לבקר
+            controller.send_command('8')
         except Exception as e:
             print(f"Warning: couldn't send '8' ({e})")
-        # סימון עצירה ל־listener
         if stop_event is not None:
             stop_event.set()
         root.destroy()
@@ -211,6 +209,7 @@ def wait_for_exit_gui_and_send_8(controller, stop_event, title="Exit Mode"):
 
     root.protocol("WM_DELETE_WINDOW", on_exit)
     root.mainloop()
+
 
 def get_mode_from_user():
     print("\nSelect Mode:")
@@ -278,21 +277,29 @@ def main():
         if choice == '1':
             controller.send_command('1')
             stop_event = threading.Event()
-            # הפעלת טרד האזנה בלבד
-            listener_thread = threading.Thread(target=listen_for_controller_Dist, args=(controller, stop_event))
-            listener_thread.daemon = True
+
+            # טרד האזנה
+            listener_thread = threading.Thread(
+                target=listen_for_controller_Dist,
+                args=(controller, stop_event),
+                daemon=True
+            )
             listener_thread.start()
 
-            print("Listening for data... use the GUI button to exit.")
-            # חלון קטן: בלחיצה שולח '8' ומסמן stop_event
-            wait_for_exit_gui_and_send_8(controller, stop_event, title="Mode 1 ")
+            # טרד GUI פולאר
+            gui_thread = threading.Thread(
+                target=sonar_gui,
+                args=(stop_event,),
+                daemon=True
+            )
+            gui_thread.start()
 
-            # ה־stop_event סומן מתוך הכפתור; מחכים שה־listener ימות בצורה מסודרת
+            print("Listening for data + showing sonar GUI... use the GUI button to exit.")
+            wait_for_exit_gui_and_send_8(controller, stop_event, title="Mode 1")
+
+            # ה־stop_event סומן מתוך הכפתור; מחכים שהטרדים ימותו
             listener_thread.join(timeout=2.0)
-            print("Exited Mode 1.")
-
-            stop_event.set()
-            listener_thread.join()
+            gui_thread.join(timeout=2.0)
             print("Exited Mode 1.")
 
         if choice == '2':
