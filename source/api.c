@@ -7,6 +7,7 @@ char string_lcd[5];
 
 int deg;
 int iter = 0;
+int iter_meas = 0;
 int deg_str;
 int deg_duty_cycle;
 unsigned int avg_meas;
@@ -24,18 +25,22 @@ void  Objects_Detector(){
     __bis_SR_register(GIE);
 
     while(state==state1){
+        int dist;
         deg = 600;
         TACCR1 = deg;
         TACCTL1 = OUTMOD_7;
         TACTL = TASSEL_2 | MC_1;
         TA1CTL = TASSEL_2 | MC_2;
-        __delay_cycles(100000);
+        __delay_cycles(200000);
         for (iter = 0; iter < 180 && state==state1; iter++) {
                 deg += 10;
                 TACCR1 = deg;
-                __delay_cycles(100000);
-                int dist = send_trigger_pulse();
-                send_meas(dist,iter);
+                __delay_cycles(3000);
+                for (iter_meas = 0; iter_meas < 7; iter_meas++) {
+                    dist = send_trigger_pulse();
+                    send_meas(dist,iter);
+                    __delay_cycles(200);
+                }
 
             }
     }

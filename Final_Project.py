@@ -32,28 +32,70 @@ class MSPController:
 
 # -------- Thread לקריאת הנתונים --------
 def listen_for_controller_Dist(controller, stop_event):
+    buffer_angle = None
+    buffer_vals = []
+    max_samples = 10
+    tolerance_cm = 4  # within ±3 cm counts as same cluster
+
+    def choose_best_cluster(readings):
+        # Build clusters of close readings
+        clusters = []
+        for val in readings:
+            cluster = [x for x in readings if abs(x - val) <= tolerance_cm]
+            clusters.append(cluster)
+        # Pick largest cluster; if tie, pick smallest spread
+        best_cluster = max(clusters, key=lambda c: (len(c), -(max(c) - min(c))))
+        return round(sum(best_cluster) / len(best_cluster), 1)
+
+    def process_angle(angle, readings):
+        if not readings:
+            return
+        final_val = choose_best_cluster(readings)
+        angle_distance_data[angle] = final_val
+        print(f"Angle {angle}° = {final_val:.1f} cm (from {readings})")
+
     while not stop_event.is_set():
         data = controller.read_data()
-        if data:
-            try:
-                angle_str, dist_str = data.split(":")
-                angle_raw = int(angle_str)
-                distance_us = int(dist_str)
-                distance = distance_us // 58.0
-                if 0 <= angle_raw < 180:
-                    angle_distance_data[angle_raw] = distance
-                    print(f"Angle {angle_raw}° = {distance} cm")
+        if not data:
+            continue
 
-                    # החלקת קצה חריג מול שכנים
-                    if 2 <= angle_raw <= 179:
-                        mid = angle_distance_data[angle_raw - 1]
-                        left = angle_distance_data[angle_raw - 2]
-                        right = angle_distance_data[angle_raw]
-                        if left is not None and right is not None and mid is not None:
-                            if (abs(mid - left) > 30) and (abs(mid - right) > 30):
-                                angle_distance_data[angle_raw - 1] = (left + right) // 2
-            except ValueError:
+        try:
+            angle_str, dist_str = data.split(":")
+            angle = int(angle_str)
+            distance_us = int(dist_str)
+            distance_cm = distance_us / 58.0
+
+            if distance_cm == 0:  # ignore bad reading
                 continue
+
+        except ValueError:
+            continue
+
+        if not (0 <= angle < 180):
+            continue
+
+        if buffer_angle is None:
+            # First reading in a batch
+            buffer_angle = angle
+            buffer_vals = [distance_cm]
+        elif angle != buffer_angle:
+            # New angle arrived before batch complete → process current
+            process_angle(buffer_angle, buffer_vals)
+            # Start new batch
+            buffer_angle = angle
+            buffer_vals = [distance_cm]
+        else:
+            # Same angle
+            buffer_vals.append(distance_cm)
+            if len(buffer_vals) >= max_samples:
+                process_angle(buffer_angle, buffer_vals)
+                buffer_angle = None
+                buffer_vals = []
+
+    # Flush leftover readings if thread exits
+    if buffer_angle is not None and buffer_vals:
+        process_angle(buffer_angle, buffer_vals)
+
 
 def listen_for_controller_Object_and_Light(controller, stop_event):
     while not stop_event.is_set():
@@ -89,79 +131,6 @@ def listen_for_controller_Light(controller, stop_event):
 
                 except ValueError:
                     continue
-
-# -------- Thread ל-GUI פולאר --------
-def sonar_gui(stop_event):
-    plt.ion()
-    fig = plt.figure(figsize=(6, 6))
-    ax = fig.add_subplot(111, polar=True)
-
-    ax.set_theta_zero_location("N")
-    ax.set_theta_direction(-1)
-    ax.set_thetamin(0)
-    ax.set_thetamax(180)
-
-    max_distance = 250
-    distance_threshold = 50
-    min_cluster_size = 10
-    meas_angle = 15  # רוחב אלומה משוער (מעלות)
-
-    while not stop_event.is_set():
-        time.sleep(0.5)
-        ax.clear()
-        ax.set_theta_zero_location("N")
-        ax.set_theta_direction(-1)
-        ax.set_thetamin(0)
-        ax.set_thetamax(180)
-        ax.set_rlim(0, max_distance)
-
-        angles_all = []
-        distances_all = []
-        clusters = []
-        current_cluster = []
-
-        for idx, dist in enumerate(angle_distance_data):
-            if dist is not None:
-                angle_rad = math.radians(idx)
-                angles_all.append(angle_rad)
-                distances_all.append(dist)
-
-                if dist <= distance_threshold:
-                    current_cluster.append((idx, dist))
-                else:
-                    if len(current_cluster) >= min_cluster_size:
-                        clusters.append(current_cluster)
-                    current_cluster = []
-            else:
-                if len(current_cluster) >= min_cluster_size:
-                    clusters.append(current_cluster)
-                current_cluster = []
-
-        if len(current_cluster) >= min_cluster_size:
-            clusters.append(current_cluster)
-
-        ax.scatter(angles_all, distances_all, c='lime', s=10, label="Scan")
-
-        for cluster in clusters:
-            angle_idxs = [idx for idx, _ in cluster]
-            dists = [d for _, d in cluster]
-
-            phi_center = sum(angle_idxs) / len(angle_idxs)
-            phi_center_rad = math.radians(phi_center)
-            p_mean = sum(dists) / len(dists)
-            l_width_deg = angle_idxs[-1] - angle_idxs[0] + meas_angle  # הכללת רוחב האלומה
-            l_real = 2 * math.pi * p_mean * (l_width_deg / 360)       # קשת בקירוב
-
-            angles_rad = [math.radians(a) for a in angle_idxs]
-            ax.scatter(angles_rad, dists, c='red', s=30)
-
-            label = f"φ={int(phi_center)}°\np={int(p_mean)}cm\nl={int(l_real)}cm"
-            ax.text(phi_center_rad, p_mean + 10, label, fontsize=7, ha='center', color='blue',
-                    bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
-
-        ax.set_title("Detected Objects: φ (deg), p (cm), l (cm)")
-        plt.draw()
-        plt.pause(0.001)
 
 # -------- Thread לגרף בר בתוך tkinter --------
 def debug_bar_plot_thread_tk(root, stop_event):
@@ -246,8 +215,8 @@ def run_mode_1(controller):
     # Matplotlib figure embedded in Tkinter
     fig = plt.Figure(figsize=(6, 6))
     ax = fig.add_subplot(111, polar=True)
-    ax.set_theta_zero_location("N")
-    ax.set_theta_direction(-1)
+    ax.set_theta_zero_location("E")  # Start at 0° on right side
+    ax.set_theta_direction(1)  # Clockwise
     ax.set_thetamin(0)
     ax.set_thetamax(180)
     ax.set_rlim(0, 250)
@@ -267,15 +236,16 @@ def run_mode_1(controller):
     # Plot update function
     def update_plot():
         ax.clear()
-        ax.set_theta_zero_location("N")
-        ax.set_theta_direction(-1)
+        ax.set_theta_zero_location("E")  # Start at 0° on right side
+        ax.set_theta_direction(1)  # Clockwise
         ax.set_thetamin(0)
         ax.set_thetamax(180)
-        ax.set_rlim(0, 250)
+        ax.set_rlim(0, 100)  # 1 meter display range
 
-        distance_threshold = 50
-        min_cluster_size = 10
-        meas_angle = 15
+        distance_threshold = 100  # cm, max detection range
+        min_cluster_size = 30
+        meas_angle = 30  # beam width
+        max_gap_cm = 10  # max distance jump inside a cluster
 
         angles_all = []
         distances_all = []
@@ -289,6 +259,13 @@ def run_mode_1(controller):
                 distances_all.append(dist)
 
                 if dist <= distance_threshold:
+                    if current_cluster:
+                        last_dist = current_cluster[-1][1]
+                        if abs(dist - last_dist) > max_gap_cm:
+                            # split cluster due to gap
+                            if len(current_cluster) >= min_cluster_size:
+                                clusters.append(current_cluster)
+                            current_cluster = []
                     current_cluster.append((idx, dist))
                 else:
                     if len(current_cluster) >= min_cluster_size:
@@ -302,29 +279,46 @@ def run_mode_1(controller):
         if len(current_cluster) >= min_cluster_size:
             clusters.append(current_cluster)
 
+        # Plot all scan points in green
         ax.scatter(angles_all, distances_all, c='lime', s=10, label="Scan")
 
         for cluster in clusters:
             angle_idxs = [idx for idx, _ in cluster]
             dists = [d for _, d in cluster]
 
+            # Trim beam edges (15° from each side)
+            trim_points = int(meas_angle / 2)
+            if len(cluster) > 2 * trim_points:
+                angle_idxs = angle_idxs[trim_points:-trim_points]
+                dists = dists[trim_points:-trim_points]
+            else:
+                continue  # skip if cluster too small after trimming
+
+            if not angle_idxs:
+                continue
+
             phi_center = sum(angle_idxs) / len(angle_idxs)
             phi_center_rad = math.radians(phi_center)
             p_mean = sum(dists) / len(dists)
-            l_width_deg = angle_idxs[-1] - angle_idxs[0] + meas_angle
-            l_real = 2 * math.pi * p_mean * (l_width_deg / 360)
 
-            angles_rad = [math.radians(a) for a in angle_idxs]
-            ax.scatter(angles_rad, dists, c='red', s=30)
+            # Correct width calculation after trimming
+            valid_width_deg = angle_idxs[-1] - angle_idxs[0]
+            l_real = 2 * math.pi * p_mean * (valid_width_deg / 360)
 
+            # Draw object arc
+            arc_angles = [math.radians(a) for a in range(angle_idxs[0], angle_idxs[-1] + 1)]
+            arc_r = [p_mean] * len(arc_angles)
+            ax.plot(arc_angles, arc_r, c='red', linewidth=2)
+
+            # Label object
             label = f"φ={int(phi_center)}°\np={int(p_mean)}cm\nl={int(l_real)}cm"
-            ax.text(phi_center_rad, p_mean + 10, label, fontsize=7, ha='center', color='blue',
+            ax.text(phi_center_rad, p_mean + 5, label, fontsize=7, ha='center', color='blue',
                     bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
 
         canvas.draw()
 
         if not stop_event.is_set():
-            root.after(200, update_plot)  # Update every 200 ms
+            root.after(200, update_plot)
 
     update_plot()
     root.mainloop()
@@ -334,7 +328,7 @@ def run_mode_1(controller):
 
 # -------- main --------
 def main():
-    port = "COM4"  # עדכן את הפורט לפי הצורך
+    port = "COM9"  # עדכן את הפורט לפי הצורך
     controller = MSPController(port)
 
     while True:

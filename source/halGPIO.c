@@ -101,10 +101,11 @@ __interrupt void TIMER1_A1_ISR(void)
         }
         break;
     case TA1IV_TACCR2:  break;
-    case TA1IV_TAIFG:  // overflow = timeout (~65.536 ms @ 1MHz)
-            measure_done = 2;                            // mark "no echo"
-            __bic_SR_register_on_exit(LPM0_bits);
-            break;
+    case TA1IV_TAIFG:  // Overflow timeout (~65 ms @ 1 MHz)
+        diff_ticks   = 0;
+        measure_done = 2;                    // mark timeout
+        __bic_SR_register_on_exit(LPM0_bits);
+        break;                          // mark "no echo"
     }
 }
  //*********************************************************************
@@ -116,52 +117,31 @@ __interrupt void ADC10_ISR(void) {
 }
 //--------------------------------------------------------------------
 
-unsigned int send_trigger_pulse() {
-    {
-        // Prepare capture state
-        cap_count    = 0;
-        measure_done = 0;
-        TA1CCTL1 &= ~(CCIFG | COV);   // clear any pending flag/overflow
-        TA1CTL   |= TACLR;            // reset TAR and divider to 0 before starting
+unsigned int send_trigger_pulse(void)
+{
+    // Prepare capture state
+    cap_count    = 0;
+    measure_done = 0;
+    TA1CCTL1 &= ~(CCIFG | COV);
+    TA1CTL   |= TACLR; // reset TAR
 
-        // Emit >=10 us HIGH pulse on TRIG (P1.7)
-        P1OUT |=  BIT7;
-        __delay_cycles(2000);   // ~12 µs at 1 MHz (meets > 10 µs spec)
-        P1OUT &= ~BIT7;
+    // Ensure overflow interrupt is enabled
+    TA1CTL |= TAIE;
 
-        // Wait here until ISR captures both edges and signals completion.
-        // Use LPM0 so SMCLK (Timer1_A clock) keeps running.
-        while (!measure_done) {
-            __bis_SR_register(LPM0_bits | GIE);
-            __no_operation();
-        }
-        if (measure_done == 2) {
-            ser_output("No echo / out of range\r\n");
-            return;
-        }
+    // Emit >=10 us HIGH pulse on TRIG (P1.7)
+    P1OUT |=  BIT7;
+    __delay_cycles(200);   // ~12 µs
+    P1OUT &= ~BIT7;
 
-        /*
-        // Convert microseconds to centimeters: us/58
-        float distance_cm = ((float)diff_ticks) / 58.0f;   // HC-SR04 formula
-
-        // Print "Distance: <int>.<frac> cm"
-        char ibuf[8], fbuf[8], degbuf[8];
-        unsigned int d_int  = (unsigned int)floorf(distance_cm);
-        unsigned int d_frac = (unsigned int)floorf((distance_cm - d_int) * 100.0f + 0.5f); // 2 decimals
-
-        //ser_output("Distance: ");
-        ltoa(deg, degbuf);  ser_output(degbuf);
-        ser_output(":");
-        ltoa(diff_ticks, ibuf);  ser_output(ibuf);
-
-        //if (d_frac < 10) ser_output("0");
-        //ltoa(d_frac, fbuf); ser_output(fbuf);
-        ser_output("\r\n");
-        */
-        return diff_ticks;
+    // Wait for either both captures or overflow
+    while (!measure_done) {
+        __bis_SR_register(LPM0_bits | GIE);
     }
 
+    return diff_ticks;
 }
+
+
 //--------------------------------------------------------------------
 void send_meas(unsigned int meas, unsigned int iter){
     // Convert to string and print
