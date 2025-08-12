@@ -4,15 +4,23 @@
 #include "../header/bsp.h"
 #include "../header/main.h"
 
+#define RX_BUF_SIZE 80
+#define RX_EOF_CHAR '='
+#define EOF_CHAR '+'
+
 // Globals used across modules (keep as-is for now)
 extern enum FSMstate state;
 extern enum main_states Main;
+extern enum flash_states flash_state;
+extern enum write_stages write_stage;
 extern enum SYSmode lpm_mode;
 extern char deg_array[5];
 extern char string_array[16];
 extern int j;
 extern volatile int temp[2];
 extern volatile float diff;
+extern char DataFromPC[RX_BUF_SIZE];
+extern char file_content[RX_BUF_SIZE];
 
 
 // Public HAL/API
