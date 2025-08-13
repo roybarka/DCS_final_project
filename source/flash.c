@@ -36,16 +36,19 @@ void copy_seg_flash_for_index(short idx, const char* buf, unsigned int len)
     // Get current write position, or start at file beginning if first write
     if (current_write_positions[idx] == 0) {
         // First write - do segment setup
-        char* segment_start;
+        static char* segment_start;
         char temp_buffer[TEMP_BUFFER_SIZE];
         unsigned int chunk;
+        char* temp_segment_start;
         
         current_write_positions[idx] = file.file_ptr[idx];  // Start at file beginning
         
         // Calculate segment start address (align to segment boundary)
-        segment_start = (char*)((unsigned int)current_write_positions[idx] & FLASH_SEGMENT_MASK);
+        temp_segment_start = (char*)((unsigned int)current_write_positions[idx] & FLASH_SEGMENT_MASK);
         
-        if(idx ==0){
+        if(idx == 0 || segment_start != temp_segment_start){
+            // If this is the first file or a new segment, erase the segment
+            segment_start = temp_segment_start;  // Remember this segment
             // Erase the entire segment first
             FCTL1 = FWKEY + ERASE;                          // Set Erase bit
             FCTL3 = FWKEY;                                  // Clear Lock bit
