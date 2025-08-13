@@ -4,32 +4,34 @@
 #include "../header/bsp.h"
 #include "../header/main.h"
 
-// Globals used across modules (keep as-is for now)
+// =================== GLOBALS USED ACROSS MODULES ===================
 extern enum FSMstate state;
 extern enum SYSmode lpm_mode;
 extern char delay_array[5];
-extern char string_array[16];
-extern int j;
+extern int change_deg;
 extern volatile int temp[2];
 extern volatile float diff;
+extern volatile unsigned int deg;
+extern volatile unsigned int deg_duty_cycle;
 
-
-// Public HAL/API
-extern void sysConfig(void);
-extern void put_on_lcd(char*, unsigned int);
-extern unsigned int send_trigger_pulse();
-extern void ser_output(char *);
-extern void send_meas(unsigned int,unsigned int);
-extern unsigned int LDRmeas(void);
-extern void init_echo_capture(void);
-extern void init_trigger_gpio(void);
-extern void send_two_meas(unsigned int ,unsigned int ,unsigned int );
+// =================== PUBLIC HAL/API ===================
+void sysConfig(void);
+void telemetr_config(void);
+void telemeter_deg_update(void);
+void put_on_lcd(char*, unsigned int);
+unsigned int send_trigger_pulse(void);
+void ser_output(char *);
+unsigned int LDRmeas(void);
+void init_echo_capture(void);
+void init_trigger_gpio(void);
 
 // --- LCD configuration & API (unchanged) ---
 #ifdef CHECKBUSY
-  #define LCD_WAIT lcd_check_busy()
+#define LCD_WAIT lcd_check_busy()
 #else
-  #define LCD_WAIT DelayMs(5)
+#define LCD_WAIT DelayMs(5)
+#endif
+
 #endif
 
 #define LCD_EN(a)        (!a ? (P2OUT&=~0x20) : (P2OUT|=0x20))   // P2.5
@@ -77,4 +79,4 @@ extern void DelayMs(unsigned int);
 extern void DelayUs(unsigned int);
 extern void clear_string(char*);
 
-#endif // _halGPIO_H_
+

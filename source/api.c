@@ -1,78 +1,92 @@
-#include  "../header/api.h"
-#include  "../header/halGPIO.h"
-#include "stdio.h"
+// =================== INCLUDES ===================
+#include "../header/api.h"
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <math.h>
 
-unsigned int count_num = 0;
-char string_lcd[5];
+// =================== STATIC/OUTPUT HELPERS ===================
+static char newline[] = " \r\n";
+static char dst_char[5];
+static char deg_char[7];
+static char Light_char[5];
 
-int deg;
-int iter = 0;
-int iter_meas = 0;
-int deg_str;
-int deg_duty_cycle;
-unsigned int avg_meas;
+// =================== OUTPUT HELPER FUNCTIONS ===================
+void send_meas(unsigned int meas, unsigned int iter) {
+    ltoa(iter, deg_char);
+    ltoa(meas, dst_char);
+    ser_output(deg_char);
+    ser_output(":");
+    ser_output(dst_char);
+    ser_output(newline);
+}
 
-//-------------------------------------------------------------
-//                 Objects Detector
+void send_two_meas(unsigned int iter, unsigned int avg_meas, unsigned int dist) {
+    ltoa(iter, deg_char);
+    ltoa(avg_meas, Light_char);
+    ltoa(dist, dst_char);
+    ser_output(deg_char);
+    ser_output(":");
+    ser_output(dst_char);
+    ser_output(":");
+    ser_output(Light_char);
+    ser_output(newline);
+}
+
+// =================== FSM / HIGH-LEVEL ROUTINES ===================
+
+// Objects Detector
 // TA0 in up-mode with TA0CCR0 = 20000 @ SMCLK=1MHz -> 20 ms period (50 Hz).
 // Using TA0.1 (P1.6) with OUTMOD_7 (reset/set):
-// pulse width [ticks] = TACCR1; 1 tick = 1 µs => 600..2400 ticks = 0.6..2.4 ms
-// We map deg  [0..180] to CCR1 = 600 + 10*deg.
-//------------------------------------------------------------
-void  Objects_Detector(){
+// pulse width [ticks] = TACCR1; 1 tick = 1us => 600..2400 ticks = 0.6..2.4 ms
+// We map deg [0..180] to CCR1 = 600 + 10*deg.
+void Objects_Detector(void) {
     init_trigger_gpio();
     init_echo_capture();
     __bis_SR_register(GIE);
-
     while(state==state1){
-        int dist;
+        int iter, iter_meas, dist;
         deg = 600;
         TACCR1 = deg;
         TACCTL1 = OUTMOD_7;
         TACTL = TASSEL_2 | MC_1;
         TA1CTL = TASSEL_2 | MC_2;
-        __delay_cycles(200000);
+        __delay_cycles(300000);
         for (iter = 0; iter < 180 && state==state1; iter++) {
-                deg += 10;
-                TACCR1 = deg;
+            IE2 &= UCA0RXIE;
+            deg += 10;
+            TACCR1 = deg;
+            __delay_cycles(20000);
+            TACCR1 = 0;
+            for (iter_meas = 0; iter_meas < 7; iter_meas++) {
+                dist = send_trigger_pulse();
+                send_meas(dist,iter);
                 __delay_cycles(3000);
-                for (iter_meas = 0; iter_meas < 7; iter_meas++) {
-                    dist = send_trigger_pulse();
-                    send_meas(dist,iter);
-                    __delay_cycles(200);
-                }
-
             }
+        }
     }
-
 }
-//-------------------------------------------------------------
-//                Telemeter
-//------------------------------------------------------------
-void Telemeter(){
-    deg = atoi(delay_array);
-    deg_duty_cycle = 600 + deg * 10;
-    TACCR1 = deg_duty_cycle;
-    TACCTL1 = OUTMOD_7;
-    TACTL = TASSEL_2 | MC_1;
-    TA1CTL |= TASSEL_2 | MC_2;
+
+// Telemeter
+void Telemeter(void) {
+    telemetr_config();
+    telemeter_deg_update();
     __delay_cycles(1000000);
-    int j = 0;
-    while(state==state2) {
-        int dist = send_trigger_pulse();
+    while(state==state2 & change_deg==0) {
+        int dist;
+        IE2 &= UCA0RXIE;
+        dist = send_trigger_pulse();
         send_meas(dist,deg);
-        __delay_cycles(1000000);
+        IE2 |= UCA0RXIE;
+        __delay_cycles(10000);
     }
-
-    state=state8;
 }
 
-//-------------------------------------------------------------
-//                Light_Detector
-//------------------------------------------------------------
-
-void Light_Detector(){
+// Light Detector
+void Light_Detector(void) {
     while(state==state3){
+        int iter;
+        unsigned int avg_meas;
         deg = 600;
         TACCR1 = deg;
         TACCTL1 = OUTMOD_7;
@@ -85,17 +99,18 @@ void Light_Detector(){
             avg_meas = LDRmeas();
             send_meas(avg_meas, iter);
             __delay_cycles(50000);
-
-            }
+        }
     }
-
 }
-void Object_and_Light_Detector(){
+
+// Object and Light Detector
+void Object_and_Light_Detector(void) {
     init_trigger_gpio();
     init_echo_capture();
     __bis_SR_register(GIE);
-
     while(state==state4){
+        int iter;
+        unsigned int avg_meas;
         deg = 600;
         TACCR1 = deg;
         TACCTL1 = OUTMOD_7;
@@ -109,9 +124,7 @@ void Object_and_Light_Detector(){
             unsigned int dist = send_trigger_pulse();
             send_two_meas(iter,avg_meas, dist);
             __delay_cycles(50000);
-
-            }
+        }
     }
-
 }
 

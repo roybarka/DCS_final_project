@@ -1,8 +1,5 @@
-#include  "../header/api.h"
-#include  "../header/main.h"
-#include  <stdio.h>
-
-
+#include "../header/api.h"
+#include "../header/main.h"
 
 
 enum FSMstate state;

@@ -1,4 +1,4 @@
-#include  "../header/bsp.h"    // private library - BSP layer
+#include "../header/bsp.h"
 
 //-----------------------------------------------------------------------------  
 //           GPIO configuration
