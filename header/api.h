@@ -8,6 +8,7 @@ extern void Objects_Detector();
 extern void Telemeter();
 extern void show_menu();
 extern void Light_Detector();
+extern void Object_and_Light_Detector();
 
 
 

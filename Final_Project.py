@@ -55,21 +55,40 @@ def listen_for_controller_Dist(controller, stop_event):
             except ValueError:
                 continue
 
-def listen_for_controller_Light(controller, stop_event):
+def listen_for_controller_Object_and_Light(controller, stop_event):
     while not stop_event.is_set():
         data = controller.read_data()
         if data:
             try:
-                angle_str, Light_str = data.split(":")
+                angle_str,dist_str, Light_str = data.split(":")
                 angle_raw = int(angle_str)
+                distance_us = int(dist_str)
+                distance = distance_us // 58.0
                 Light_Power = float(Light_str)
                 Light_Power = 100 *(Light_Power/1023)
+
                 if 0 <= angle_raw < 180:
                     angle_Light_data[angle_raw] = Light_Power
-                    print(f"Angle {angle_raw}° = {Light_Power}% Light Power ")
+                    print(f"Angle {angle_raw}° : Distance {distance} : {Light_Power}% Light Power ")
 
             except ValueError:
                 continue
+
+def listen_for_controller_Light(controller, stop_event):
+     while not stop_event.is_set():
+            data = controller.read_data()
+            if data:
+                try:
+                    angle_str, Light_str = data.split(":")
+                    angle_raw = int(angle_str)
+                    Light_Power = float(Light_str)
+                    Light_Power = 100 *(Light_Power/1023)
+                    if 0 <= angle_raw < 180:
+                        angle_Light_data[angle_raw] = Light_Power
+                        print(f"Angle {angle_raw}° = {Light_Power}% Light Power ")
+
+                except ValueError:
+                    continue
 
 # -------- Thread ל-GUI פולאר --------
 def sonar_gui(stop_event):
@@ -169,6 +188,29 @@ def debug_bar_plot_thread_tk(root, stop_event):
 
     update_plot()
 
+def wait_for_exit_gui_and_send_8(controller, stop_event, title="Exit Mode"):
+    root = tk.Tk()
+    root.title(title)
+
+    info = tk.Label(root, text="לחזור לתפריט (נשלח '8' ונעצור האזנה ו-GUI)")
+    info.pack(padx=10, pady=10)
+
+    def on_exit():
+        try:
+            controller.send_command('8')
+        except Exception as e:
+            print(f"Warning: couldn't send '8' ({e})")
+        if stop_event is not None:
+            stop_event.set()
+        root.destroy()
+
+    btn = tk.Button(root, text="יציאה מהמצב", command=on_exit)
+    btn.pack(padx=10, pady=10)
+
+    root.protocol("WM_DELETE_WINDOW", on_exit)
+    root.mainloop()
+
+
 def get_mode_from_user():
     print("\nSelect Mode:")
     print("1 - Sonar Object detector Mode")
@@ -184,41 +226,111 @@ def get_mode_from_user():
 # --- הפעלת מצב 1 (כולל טרדים ו־GUI) ---
 def run_mode_1(controller):
     global angle_distance_data
-    angle_distance_data = [None] * 180  # איפוס תצוגה ישנה
+    angle_distance_data = [None] * 180  # reset data
 
-    # שליחת פקודת מצב לבקר
     controller.send_command('1')
-
-    # יצירת אירוע עצירה ו־threads
     stop_event = threading.Event()
-    listener_thread = threading.Thread(target=listen_for_controller_Dist, args=(controller, stop_event), daemon=True)
+
+    # Thread – listener
+    listener_thread = threading.Thread(
+        target=listen_for_controller_Dist,
+        args=(controller, stop_event),
+        daemon=True
+    )
     listener_thread.start()
 
-    gui_thread = threading.Thread(target=sonar_gui, args=(stop_event,), daemon=True)
-    gui_thread.start()
-
-    # חלון קטן רק לכפתור יציאה (אפשר להרחיב)
+    # Tkinter window
     root = tk.Tk()
-    root.title("Distance Debug View - Mode 1")
+    root.title("Mode 1 - Sonar View")
 
-    exit_button = tk.Button(root, text="Exit Mode 1", command=root.destroy)
-    exit_button.pack(padx=10, pady=10)
+    # Matplotlib figure embedded in Tkinter
+    fig = plt.Figure(figsize=(6, 6))
+    ax = fig.add_subplot(111, polar=True)
+    ax.set_theta_zero_location("N")
+    ax.set_theta_direction(-1)
+    ax.set_thetamin(0)
+    ax.set_thetamax(180)
+    ax.set_rlim(0, 250)
 
-    # אפשרות להציג גם גרף debug ברים:
-    # debug_bar_plot_thread_tk(root, stop_event)
+    canvas = FigureCanvasTkAgg(fig, master=root)
+    canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-    try:
-        root.mainloop()   # המתנה עד סגירת מצב 1
-    finally:
-        # ניקוי threads בצורה מסודרת
+    # Exit button
+    def on_exit():
+        controller.send_command('8')
         stop_event.set()
-        listener_thread.join(timeout=2.0)
-        gui_thread.join(timeout=2.0)
-        try:
-            plt.close('all')
-        except Exception:
-            pass
-        print("Exited Mode 1, back to main menu.")
+        root.destroy()
+
+    exit_button = tk.Button(root, text="Exit Mode 1", command=on_exit)
+    exit_button.pack(pady=5)
+
+    # Plot update function
+    def update_plot():
+        ax.clear()
+        ax.set_theta_zero_location("N")
+        ax.set_theta_direction(-1)
+        ax.set_thetamin(0)
+        ax.set_thetamax(180)
+        ax.set_rlim(0, 250)
+
+        distance_threshold = 50
+        min_cluster_size = 10
+        meas_angle = 15
+
+        angles_all = []
+        distances_all = []
+        clusters = []
+        current_cluster = []
+
+        for idx, dist in enumerate(angle_distance_data):
+            if dist is not None:
+                angle_rad = math.radians(idx)
+                angles_all.append(angle_rad)
+                distances_all.append(dist)
+
+                if dist <= distance_threshold:
+                    current_cluster.append((idx, dist))
+                else:
+                    if len(current_cluster) >= min_cluster_size:
+                        clusters.append(current_cluster)
+                    current_cluster = []
+            else:
+                if len(current_cluster) >= min_cluster_size:
+                    clusters.append(current_cluster)
+                current_cluster = []
+
+        if len(current_cluster) >= min_cluster_size:
+            clusters.append(current_cluster)
+
+        ax.scatter(angles_all, distances_all, c='lime', s=10, label="Scan")
+
+        for cluster in clusters:
+            angle_idxs = [idx for idx, _ in cluster]
+            dists = [d for _, d in cluster]
+
+            phi_center = sum(angle_idxs) / len(angle_idxs)
+            phi_center_rad = math.radians(phi_center)
+            p_mean = sum(dists) / len(dists)
+            l_width_deg = angle_idxs[-1] - angle_idxs[0] + meas_angle
+            l_real = 2 * math.pi * p_mean * (l_width_deg / 360)
+
+            angles_rad = [math.radians(a) for a in angle_idxs]
+            ax.scatter(angles_rad, dists, c='red', s=30)
+
+            label = f"φ={int(phi_center)}°\np={int(p_mean)}cm\nl={int(l_real)}cm"
+            ax.text(phi_center_rad, p_mean + 10, label, fontsize=7, ha='center', color='blue',
+                    bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+
+        canvas.draw()
+
+        if not stop_event.is_set():
+            root.after(200, update_plot)  # Update every 200 ms
+
+    update_plot()
+    root.mainloop()
+
+    listener_thread.join(timeout=2.0)
+    print("Exited Mode 1.")
 
 # -------- main --------
 def main():
@@ -233,22 +345,7 @@ def main():
             break
 
         if choice == '1':
-            controller.send_command('1')
-            stop_event = threading.Event()
-            # הפעלת טרד האזנה בלבד
-            listener_thread = threading.Thread(target=listen_for_controller_Dist, args=(controller, stop_event))
-            listener_thread.daemon = True
-            listener_thread.start()
-
-            print("Listening for data... type 'exit' to return to menu.")
-            while True:
-                user_input = input()
-                if user_input.strip().lower() == 'exit':
-                    break
-
-            stop_event.set()
-            listener_thread.join()
-            print("Exited Mode 1.")
+            run_mode_1(controller)
 
         if choice == '2':
             controller.send_command('2')
@@ -260,18 +357,16 @@ def main():
 
             stop_event = threading.Event()
             # הפעלת טרד האזנה בלבד
-            listener_thread = threading.Thread(target=listen_for_controller_Light, args=(controller, stop_event))
+            listener_thread = threading.Thread(target=listen_for_controller_Dist, args=(controller, stop_event))
             listener_thread.daemon = True
             listener_thread.start()
 
-            print("Listening for data... type 'exit' to return to menu.")
-            while True:
-                user_input = input()
-                if user_input.strip().lower() == 'exit':
-                    break
+            print("Listening for data... use the GUI button to exit.")
+            # חלון קטן: בלחיצה שולח '8' ומסמן stop_event
+            wait_for_exit_gui_and_send_8(controller, stop_event, title="Mode 2 - LDR")
 
-            stop_event.set()
-            listener_thread.join()
+            # ה־stop_event סומן מתוך הכפתור; מחכים שה־listener ימות בצורה מסודרת
+            listener_thread.join(timeout=2.0)
             print("Exited Mode 2.")
 
         if choice == '3':
@@ -281,15 +376,29 @@ def main():
             listener_thread.daemon = True
             listener_thread.start()
 
-            print("Listening for data... type 'exit' to return to menu.")
-            while True:
-                user_input = input()
-                if user_input.strip().lower() == 'exit':
-                    break
+            print("Listening for data... use the GUI button to exit.")
+            # חלון קטן: בלחיצה שולח '8' ומסמן stop_event
+            wait_for_exit_gui_and_send_8(controller, stop_event, title="Mode 3 - LDR")
 
-            stop_event.set()
-            listener_thread.join()
+            # ה־stop_event סומן מתוך הכפתור; מחכים שה־listener ימות בצורה מסודרת
+            listener_thread.join(timeout=2.0)
             print("Exited Mode 3.")
+
+        if choice == '4':
+            controller.send_command('4')
+            stop_event = threading.Event()
+            listener_thread = threading.Thread(target=listen_for_controller_Object_and_Light, args=(controller, stop_event))
+            listener_thread.daemon = True
+            listener_thread.start()
+
+            print("Listening for data... use the GUI button to exit.")
+            # חלון קטן: בלחיצה שולח '8' ומסמן stop_event
+            wait_for_exit_gui_and_send_8(controller, stop_event, title="Mode 4 - LDR + HyperSonic")
+
+            # ה־stop_event סומן מתוך הכפתור; מחכים שה־listener ימות בצורה מסודרת
+            listener_thread.join(timeout=2.0)
+            print("Exited Mode 4.")
+
 
 
     controller.close()
