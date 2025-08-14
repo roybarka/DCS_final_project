@@ -31,7 +31,17 @@ void GPIOconfig(void){
 
 }
 
-
+void PBconfig(void) {
+    // Configure PB1 (P1.0) as input with pull-up and interrupt
+    P1DIR &= ~BIT0;      // Set P1.3 as input
+    P1SEL &= ~BIT0;
+    P1SEL2 &= ~BIT0;
+    P1REN |= BIT0;       // Enable pull-up/down resistor
+    P1OUT |= BIT0;       // Set as pull-up
+    P1IES |= BIT0;       // Interrupt on falling edge
+    P1IE |= BIT0;        // Enable interrupt for P1.3
+    P1IFG &= ~BIT0;      // Clear interrupt flag
+}
 
 //-------------------------------------------------------------------------------------
 //            Stop All Timers

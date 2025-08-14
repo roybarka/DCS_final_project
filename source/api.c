@@ -57,7 +57,6 @@ void Objects_Detector(void) {
             deg += 10;
             TACCR1 = deg;
             __delay_cycles(20000);
-            TACCR1 = 0;
             for (iter_meas = 0; iter_meas < 7; iter_meas++) {
                 dist = send_trigger_pulse();
                 send_meas(dist,iter);
@@ -125,6 +124,18 @@ void Object_and_Light_Detector(void) {
             send_two_meas(iter,avg_meas, dist);
             __delay_cycles(50000);
         }
+    }
+}
+
+void LDRcalibrate(void) {
+    if (pb_pressed) {
+        unsigned int measurement = LDRmeas();
+        save_LDR(measurement, measureCounter);
+        measureCounter++;
+        if(measureCounter == 10){
+            measureCounter = 0;
+        }
+        pb_pressed = 0;  // Clear the flag
     }
 }
 

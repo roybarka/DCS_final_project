@@ -6,10 +6,10 @@
 //           FLASH driver
 //-----------------------------------------------------------------------------
 #define FLASH_SEGMENT_ADDR 0xF000
+#define FLASH_SEGMENT_D 0x1000
 #define FLASH_SEGMENT_SIZE 512
 #define FLASH_SEGMENT_MASK (~(FLASH_SEGMENT_SIZE - 1u))
 #define TEMP_BUFFER_SIZE 64
-
 Files file;
 char* current_write_positions[10];  // Track current write position for each file
 
@@ -130,4 +130,28 @@ void set_next_file_ptr(short idx)
     }
     
     file.file_ptr[idx] = proposed_addr;
+}
+
+void save_LDR(unsigned int measurement, unsigned int counter) {
+    char* flash_addr = (char*)(FLASH_SEGMENT_D + 2*counter);
+
+    if (counter == 0) {
+        // First time: erase the segment and unlock flash for writing
+        FCTL1 = FWKEY + ERASE; // Set Erase bit
+        FCTL3 = FWKEY;         // Clear Lock bit
+        *flash_addr = 0;       // Dummy write to erase Flash segment
+        FCTL1 = FWKEY;         // Clear WRT bit
+        FCTL3 = FWKEY + LOCK;  // Set LOCK bit
+    }
+
+    // Write measurement to flash
+    FCTL1 = FWKEY + WRT; // Enable write
+    FCTL3 = FWKEY;       // Clear Lock bit
+
+    // Write measurement as 2 bytes (assuming 16-bit unsigned int)
+    flash_addr[0] = (char)(measurement & 0xFF);
+    flash_addr[1] = (char)((measurement >> 8) & 0xFF);
+
+    FCTL1 = FWKEY;         // Clear WRT bit
+    FCTL3 = FWKEY + LOCK;  // Set LOCK bit
 }

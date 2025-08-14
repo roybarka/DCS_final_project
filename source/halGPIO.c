@@ -14,6 +14,8 @@ int state_flag = 0;
 int change_deg = 0;
 volatile int temp[2];
 volatile float diff;
+volatile unsigned char pb_pressed = 0;
+volatile unsigned int measureCounter = 0;
 volatile unsigned int deg = 0;
 volatile unsigned int deg_duty_cycle = 0;
 volatile int meas_ready;
@@ -62,6 +64,21 @@ __interrupt void ADC10_ISR(void) {
     __bic_SR_register_on_exit(CPUOFF);
 }
 
+
+// Port 1 interrupt service routine
+#pragma vector=PORT1_VECTOR
+__interrupt void Port_1_ISR(void){
+    delay(debounceVal);
+    if (P1IFG & BIT0) {  // Check if interrupt was triggered by P1.0 (PB0)
+        if (state == state6) {
+            pb_pressed = 1;  // Set flag for main loop
+        }
+        P1IFG &= ~BIT0;  // Clear P1.3 interrupt flag
+    }
+    __bic_SR_register_on_exit(LPM0_bits);  // Exit LPM0
+}
+
+
 // UART TX ISR
 #if defined(__TI_COMPILER_VERSION__) || defined(__IAR_SYSTEMS_ICC__)
 #pragma vector=USCIAB0TX_VECTOR
@@ -103,6 +120,7 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
             case '3': state = state3; Main = detecor_sel; j = 0; break; // select detector 3
             case '4': state = state4; Main = detecor_sel; j = 0; break; // select detector 4
             case '5': Main = Flash; flash_state = Flash_SelectOp; j = 0; break; // enter flash menu
+            case '6': state = state6; Main = detecor_sel; j = 0; break; // enter LDR calibration
             case '8': state = state8; Main = detecor_sel; j = 0; break; // select detector 8
             default: j = 0; break; // reset input
             }
@@ -251,6 +269,7 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
 
 void sysConfig(void){ 
     GPIOconfig();
+    PBconfig();
     StopAllTimers();
     lcd_init();
     lcd_clear();

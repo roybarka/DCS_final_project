@@ -13,11 +13,6 @@
 #define LCD_DATA_SEL   P1SEL
 #define LCD_CTL_SEL    P2SEL
 
-// =================== BUZZER ABSTRACTION ===================
-#define BuzzPortSel P2SEL
-#define BuzzPortDir P2DIR
-#define BuzzPortOut P2OUT
-
 // =================== PUSHBUTTONS ABSTRACTION ===================
 #define PBsArrPort      P2IN
 #define PBsArrIntPend   P2IFG
@@ -37,11 +32,8 @@
 #endif
 
 
-#define GeneratorPortSel    P2SEL
-#define GeneratorPortDir    P2DIR
-#define Capture             0x10
 
-
+extern void PBconfig(void);
 extern void GPIOconfig(void);
 extern void StopAllTimers(void);
 extern void UART_init(void);

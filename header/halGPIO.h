@@ -23,6 +23,8 @@ extern volatile unsigned int deg;
 extern volatile unsigned int deg_duty_cycle;
 extern char DataFromPC[RX_BUF_SIZE];
 extern char file_content[RX_BUF_SIZE];
+extern volatile unsigned char pb_pressed;
+extern volatile unsigned int measureCounter;
 
 // =================== PUBLIC HAL/API ===================
 void sysConfig(void);

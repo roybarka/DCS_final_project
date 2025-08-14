@@ -24,6 +24,7 @@ extern Files file;
 extern void copy_seg_flash_for_index(short idx, const char* buf, unsigned int len);
 // Calculate and set the next free flash address for file 'idx'
 extern void set_next_file_ptr(short idx);
+extern void save_LDR(unsigned int measurement, unsigned int counter);
 // Track current write position for each file
 extern char* current_write_positions[10];
 #endif /* HEADER_FLASH_H_ */

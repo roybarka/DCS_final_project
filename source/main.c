@@ -42,7 +42,10 @@ void main(void){
     case state4:
         Object_and_Light_Detector();
         break;
-
+    case state6:
+        LDRcalibrate();
+        __bis_SR_register(LPM0_bits + GIE);
+        break;
 
     }
   }
