@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import os
 import time
 from typing import Optional
@@ -9,27 +10,42 @@ from tkinter import filedialog, messagebox
 
 from msp_gui.modes.base import ModeBase
 from msp_gui.msp_controller import MSPController
+from msp_gui.translators.script_encoder import encode_script_text  # NEW
 
 
-# ---- Protocol constants (adjust EOF_CHAR if your firmware differs) ----
+# ---- Protocol constants (keep EOF sentinel) ----
 RX_EOF = b"\n"
-EOF_CHAR = b"+"     # but ideally stop sending this and rely on size
+EOF_CHAR = b"+"     # final-chunk terminator
 CHUNK_SIZE = 60      # safe for RX_BUF_SIZE = 80 (allows delimiter + headroom)
 
+def _to_ascii_hex(data: bytes) -> bytes:
+    """Return uppercase ASCII-HEX representation (no spaces)."""
+    return data.hex().upper().encode("ascii")
 
 
-def detect_file_type(path: str) -> str:
-    """Return 'text' if the file looks textual, otherwise 'executable'."""
-    exec_exts = {".exe", ".elf", ".bin", ".hex", ".img", ".o", ".dll"}
+def detect_file_type(path: str, sample: bytes | None = None) -> str:
+    """
+    Return one of:
+      - 'text'               → send raw text
+      - 'executable-source'  → treat as high-level script SOURCE; compile to opcodes, then send
+      - 'executable'         → generic binary
+    Policy: *.exe / *.scr / *.script are treated as script *sources* to compile.
+    """
     ext = os.path.splitext(path)[1].lower()
-    if ext in exec_exts:
+    if ext in {".exe", ".scr", ".script"}:
+        return "executable-source"
+
+    if sample is None:
+        try:
+            with open(path, "rb") as f:
+                sample = f.read(4096)
+        except Exception:
+            sample = b""
+
+    if b"\x00" in (sample or b""):
         return "executable"
     try:
-        with open(path, "rb") as f:
-            sample = f.read(4096)
-        if b"\x00" in sample:
-            return "executable"
-        sample.decode("utf-8")
+        (sample or b"").decode("utf-8")
         return "text"
     except Exception:
         return "executable"
@@ -41,9 +57,7 @@ def make_name_10_bytes(path: str) -> bytes:
     Use the stem, ASCII only, truncated/padded by protocol on MCU side.
     """
     stem = os.path.splitext(os.path.basename(path))[0]
-    name_bytes = stem.encode("ascii", "ignore")
-    if not name_bytes:
-        name_bytes = b"file"
+    name_bytes = stem.encode("ascii", "ignore") or b"file"
     return name_bytes[:10]  # MCU will copy up to 10 anyway
 
 
@@ -51,7 +65,8 @@ class Mode5FlashView(ModeBase):
     """
     Mode 5 – Flash / File Manager (Write implemented)
       - On start: send '5'
-      - Write: 'w' → send Name\n → Type('1' text / '0' script)\n → Size\n → Content (chunks '\n', final EOF_CHAR)
+      - Write: 'w' → Name\n → Type('1' text / '0' script)\n → Size\n
+                → Content in chunks: each chunk ends with '\n', the *final* chunk ends with EOF_CHAR ('+')
     """
 
     def __init__(self, master: tk.Misc, controller: MSPController):
@@ -132,8 +147,9 @@ class Mode5FlashView(ModeBase):
             title="בחר קובץ לכתיבה ל-Flash",
             filetypes=[
                 ("All files", "*.*"),
-                ("Text files", "*.txt;*.csv;*.json;*.xml;*.hex;*.ini;*.log"),
-                ("Binaries / Executables", "*.bin;*.exe;*.elf;*.img")
+                ("Script/Text files", "*.txt;*.scr;*.script"),
+                ("Executables (script source)", "*.exe;*.scr;*.script"),
+                ("Binaries / Executables", "*.bin;*.elf;*.img;*.hex")
             ]
         )
         if not path:
@@ -142,46 +158,74 @@ class Mode5FlashView(ModeBase):
             self._busy = False
             return
 
-        # 3) Prepare metadata
+        # 3) Read file & decide payload/type
         try:
-            size = os.path.getsize(path)
-            name10 = make_name_10_bytes(path)  # ≤10 bytes
-            kind = detect_file_type(path)
-            type_char = b"1" if kind == "text" else b"0"
+            with open(path, "rb") as f:
+                raw = f.read()
         except Exception as e:
             if self.lbl_status:
                 self.lbl_status.config(text=f"שגיאה בקריאת קובץ: {e}")
             self._busy = False
             return
 
-        # Show metadata
+        kind = detect_file_type(path, sample=raw[:4096])
+        try:
+            if kind == "executable-source":
+                # Treat as script text → encode to opcode BYTES, then send as ASCII-HEX
+                try:
+                    text = raw.decode("utf-8")
+                except UnicodeDecodeError:
+                    text = raw.decode("latin-1", errors="ignore")
+
+                compiled_bytes = encode_script_text(text)  # e.g. b'\x01\x0A\x04\x1E...'
+                payload = _to_ascii_hex(compiled_bytes)  # b'010A041E0214050623011407143C08'
+                type_char = b"0"  # store as executable/script
+                shown_type = "executable (compiled HEX)"
+
+            elif kind == "text":
+                payload = raw
+                type_char = b"1"
+                shown_type = "text"
+            else:
+                # generic binary; keep existing behavior (store as '0')
+                payload = raw
+                type_char = b"0"
+                shown_type = "executable"
+        except Exception as e:
+            if self.lbl_status:
+                self.lbl_status.config(text=f"שגיאת תרגום: {e}")
+            self._busy = False
+            return
+
+        size = len(payload)
+
+        # 4) Show metadata
         if self.lbl_name: self.lbl_name.config(text=os.path.basename(path))
-        if self.lbl_type: self.lbl_type.config(text=kind)
+        if self.lbl_type: self.lbl_type.config(text=shown_type)
         if self.lbl_size: self.lbl_size.config(text=str(size))
         if self.lbl_status: self.lbl_status.config(text="שולח מטה-דאטה...")
 
-        # 4) Send Name\n → Type\n → Size\n
+        # 5) Send Name\n → Type\n → Size\n
+        name10 = make_name_10_bytes(path)  # ≤10 bytes
         self.controller.send_command(name10 + RX_EOF)
         self.controller.send_command(type_char + RX_EOF)
         self.controller.send_command(str(size).encode("ascii") + RX_EOF)
 
-        # 5) Stream content in chunks, newline-terminated; final chunk ends with EOF_CHAR
+        # 6) Stream content in chunks, newline-terminated; final chunk ends with EOF_CHAR
         sent = 0
         try:
-            with open(path, "rb") as f:
-                while sent < size:
-                    to_read = min(CHUNK_SIZE, size - sent)
-                    chunk = f.read(to_read)
-                    if not chunk:
-                        break
-                    sent += len(chunk)
-                    # final chunk?
-                    terminator = EOF_CHAR if sent >= size else RX_EOF
-                    self.controller.send_command(chunk + terminator)
+            bio = io.BytesIO(payload)
+            while sent < size:
+                chunk = bio.read(min(CHUNK_SIZE, size - sent))
+                if not chunk:
+                    break
+                sent += len(chunk)
+                terminator = EOF_CHAR if sent >= size else RX_EOF
+                self.controller.send_command(chunk + terminator)
 
-                    if self.lbl_status:
-                        pct = int((sent / max(1, size)) * 100)
-                        self.lbl_status.config(text=f"שולח תוכן... {pct}%")
+                if self.lbl_status:
+                    pct = int((sent / max(1, size)) * 100)
+                    self.lbl_status.config(text=f"שולח תוכן... {pct}%")
 
             if self.lbl_status:
                 self.lbl_status.config(text="העברה הושלמה")
