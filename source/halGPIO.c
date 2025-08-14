@@ -1,12 +1,14 @@
 // =================== INCLUDES ===================
 #include "../header/halGPIO.h"
+#include  "../header/flash.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
 
 // =================== GLOBAL VARIABLES ===================
-char delay_array[5];
+char deg_array[5];
+int j=0;
 int delay_flag = 0;
 int state_flag = 0;
 int change_deg = 0;
@@ -20,6 +22,9 @@ volatile unsigned int t_rise = 0, t_fall = 0;
 volatile unsigned int diff_ticks = 0;
 volatile unsigned char cap_count = 0;
 volatile unsigned char measure_done = 0;
+
+char DataFromPC[RX_BUF_SIZE];
+char file_content[RX_BUF_SIZE];
 
 // =================== INTERRUPT SERVICE ROUTINES ===================
 
@@ -82,47 +87,156 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
 #error Compiler not supported!
 #endif
 {
-    if (UCA0RXBUF == '1' && delay_flag == 0){
-        state = state1;
+    // Only process if character is valid ASCII (printable characters 32-126) or EOF character
+    if ((UCA0RXBUF >= 32 && UCA0RXBUF <= 126) || UCA0RXBUF == EOF_CHAR || UCA0RXBUF == RX_EOF_CHAR) {
+    DataFromPC[j] = UCA0RXBUF;  // Get string from PC
+    j++;
+    } else {
+        return; // Exit ISR early if invalid character
     }
-    else if(UCA0RXBUF == '2' || delay_flag){
-        static unsigned int j = 0;
-        if (delay_flag == 1){
-            delay_array[j] = UCA0RXBUF;
-            j++;
-            if (delay_array[j-1] == '\n'){
-                j = 0;
-                delay_flag = 0;
-                state_flag = 0;
-                state = state2;
-                change_deg = 1;
+
+    switch(Main){
+    case detecor_sel:
+        switch (DataFromPC[0]) {
+            case '1': state = state1; Main = detecor_sel; j = 0; break; // select detector 1
+            case '2': Main = Tele_get_deg; j = 0; break; // go to get degree
+            case '3': state = state3; Main = detecor_sel; j = 0; break; // select detector 3
+            case '4': state = state4; Main = detecor_sel; j = 0; break; // select detector 4
+            case '5': Main = Flash; flash_state = Flash_SelectOp; j = 0; break; // enter flash menu
+            case '8': state = state8; Main = detecor_sel; j = 0; break; // select detector 8
+            default: j = 0; break; // reset input
             }
-        } else {
-            delay_flag = 1;
-            state = state8;
+
+        break;
+
+    case Tele_get_deg:
+        if(DataFromPC[j-1] == RX_EOF_CHAR) {
+            strcpy(deg_array, DataFromPC);
+            state = state2; Main=detecor_sel;
+            j = 0;
+            change_deg = 1;
         }
+        break;
+
+    case Flash:
+        // Simple second-level FSM for flash operations; transitions only
+        switch (flash_state) {
+            case Flash_SelectOp:
+                // Expect: 'r' (read), 'e' (execute), 'w' (write)
+                if (DataFromPC[0] == 'r') { flash_state = Flash_Reading; j = 0; }
+                else if (DataFromPC[0] == 'e') { flash_state = Flash_Executing; j = 0; }
+                else if (DataFromPC[0] == 'w') { flash_state = Flash_Writing; write_stage = Write_WaitName; j = 0; }
+                else {j = 0;}
+                break;
+
+            case Flash_Reading:
+                // Placeholder: upon newline, return to selector
+                if (DataFromPC[j-1] == RX_EOF_CHAR) { flash_state = Flash_SelectOp; j = 0; }
+                break;
+
+            case Flash_Executing:
+                // Placeholder: upon newline, return to selector
+                if (DataFromPC[j-1] == RX_EOF_CHAR) { flash_state = Flash_SelectOp; j = 0; }
+                break;
+
+            case Flash_Writing:
+            {
+                static short current_file_index = 0;   // select slot 0 for now
+                static unsigned int expected_size = 0; // number of bytes to receive
+                static unsigned int received_size = 0; // progress counter
+                if (DataFromPC[j-1] == RX_EOF_CHAR || DataFromPC[j-1] == EOF_CHAR || j == RX_BUF_SIZE) {
+                    switch (write_stage) {
+                        case Write_WaitName:
+                            // Start a new file in the next free slot
+                            current_file_index = (file.num_of_files < 10) ? file.num_of_files : 9;
+                            // Set the flash pointer for this file
+                            set_next_file_ptr(current_file_index);
+                            // Initialize current write position to 0 (will be set to file start on first write)
+                            current_write_positions[current_file_index] = 0;
+                            // Copy name (strip trailing newline) into file table
+                            {
+                                unsigned int name_len = (unsigned int)(j - 1);
+                                if (name_len > 10) name_len = 10;
+                                memset(file.file_name[current_file_index], 0, sizeof(file.file_name[current_file_index]));
+                                memcpy(file.file_name[current_file_index], DataFromPC, name_len);
+                                write_stage = Write_WaitType;
+                                j = 0;
+                            }
+                            break;
+                        case Write_WaitType:
+                            // Type is first char '0' or '1'
+                            file.file_type[current_file_index] = (DataFromPC[0] == '1') ? text : script;
+                            write_stage = Write_WaitSize;
+                            j = 0;
+                            break;
+                        case Write_WaitSize:
+                            // Parse decimal size up to buffer limit
+                            expected_size = (unsigned int)atoi(DataFromPC);
+                            file.file_size[current_file_index] = (int)expected_size;
+                            received_size = 0;
+                            memset(file_content, 0, sizeof(file_content));
+                            write_stage = Write_WaitContent;
+                            j = 0;
+                            break;
+                        case Write_WaitContent:
+                            // Check which character ended the input
+                            if (DataFromPC[j-1] == RX_EOF_CHAR || j == RX_BUF_SIZE) {
+                                // End of chunk - write current data to flash and continue
+                                unsigned int chunk_len = (unsigned int)(j - 1);
+                                if (received_size + chunk_len > expected_size) {
+                                    chunk_len = expected_size - received_size;
+                                }
+                                memcpy(&file_content[received_size], DataFromPC, chunk_len);
+                                received_size += chunk_len;
+
+                                // Write current chunk to flash
+                                copy_seg_flash_for_index(current_file_index, file_content, received_size);
+                                j = 0;
+
+                                // Continue waiting for more content if not finished
+                                if (received_size < expected_size) {
+                                    // Reset for next chunk
+                                    memset(file_content, 0, sizeof(file_content));
+                                    received_size = 0;
+                                }
+                            } else if (DataFromPC[j-1] == EOF_CHAR) {
+                                // End of file - write final chunk and advance to next file
+                                unsigned int chunk_len = (unsigned int)(j - 1);
+                                if (received_size + chunk_len > expected_size) {
+                                    chunk_len = expected_size - received_size;
+                                }
+                                memcpy(&file_content[received_size], DataFromPC, chunk_len);
+                                received_size += chunk_len;
+
+                                // Write final data to flash
+                                copy_seg_flash_for_index(current_file_index, file_content, received_size);
+
+                                // Advance counters for next file
+                                if (file.num_of_files < 10) {
+                                    if (current_file_index >= file.num_of_files) {
+                                        file.num_of_files = current_file_index + 1;
+                                    }
+                                    if (current_file_index < 9) {
+                                        current_file_index++;
+                                    }
+                                }
+                                flash_state = Flash_SelectOp;
+                                write_stage = Write_WaitName;
+                                Main = detecor_sel;
+                                j = 0;
+                            }
+                            break;
+                    }
+                }
+                break;
+            }
+        }
+        break;
     }
-    else if(UCA0RXBUF == '3' && delay_flag == 0){
-        state = state3;
-    }
-    else if(UCA0RXBUF == '4' && delay_flag == 0){
-        state = state4;
-    }
-    else if(UCA0RXBUF == '5' && delay_flag == 0){
-        state = state5;
-    }
-    else if(UCA0RXBUF == '6' && delay_flag == 0){
-        state = state6;
-    }
-    else if(UCA0RXBUF == '7' && delay_flag == 0){
-        state = state7;
-    }
-    else if(UCA0RXBUF == '8' && delay_flag == 0){
-        state = state8;
-    }
-    else if(UCA0RXBUF == '9' && delay_flag == 0){
-        state = state9;
-    }
+
+
+
+
     switch(lpm_mode){
     case mode0: LPM0_EXIT; break;
     case mode1: LPM1_EXIT; break;
@@ -131,6 +245,7 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
     case mode4: LPM4_EXIT; break;
     }
 }
+
 
 // =================== SYSTEM & HARDWARE CONFIGURATION ===================
 
@@ -153,7 +268,7 @@ void telemetr_config(void)
 
 void telemeter_deg_update(void)
 {
-    deg = atoi(delay_array);
+    deg = atoi(deg_array);
     deg_duty_cycle = 600 + deg * 10;
     TACCR1 = deg_duty_cycle;
     change_deg = 0;
@@ -333,13 +448,3 @@ void delay(unsigned int t){
     for(i=t; i>0; i--);
 }
 
-// =================== UTILITY FUNCTIONS ===================
-
-void clear_string(char* str){
-    int i;
-    static unsigned int j = 0;
-    for (i=0;i<16;i++){
-        str[i]= 0;
-    }
-    j=0;
-}

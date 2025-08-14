@@ -4,15 +4,25 @@
 #include "../header/bsp.h"
 #include "../header/main.h"
 
+#define RX_BUF_SIZE 80
+#define RX_EOF_CHAR '\n'
+#define EOF_CHAR '+'
+
 // =================== GLOBALS USED ACROSS MODULES ===================
 extern enum FSMstate state;
+extern enum main_states Main;
+extern enum flash_states flash_state;
+extern enum write_stages write_stage;
 extern enum SYSmode lpm_mode;
-extern char delay_array[5];
+extern char deg_array[5];
+extern int j;
 extern int change_deg;
 extern volatile int temp[2];
 extern volatile float diff;
 extern volatile unsigned int deg;
 extern volatile unsigned int deg_duty_cycle;
+extern char DataFromPC[RX_BUF_SIZE];
+extern char file_content[RX_BUF_SIZE];
 
 // =================== PUBLIC HAL/API ===================
 void sysConfig(void);
@@ -32,7 +42,7 @@ void init_trigger_gpio(void);
 #define LCD_WAIT DelayMs(5)
 #endif
 
-#endif
+
 
 #define LCD_EN(a)        (!a ? (P2OUT&=~0x20) : (P2OUT|=0x20))   // P2.5
 #define LCD_EN_DIR(a)    (!a ? (P2DIR&=~0x20) : (P2DIR|=0x20))
@@ -77,6 +87,5 @@ extern void lcd_init(void);
 extern void lcd_strobe(void);
 extern void DelayMs(unsigned int);
 extern void DelayUs(unsigned int);
-extern void clear_string(char*);
 
-
+#endif
