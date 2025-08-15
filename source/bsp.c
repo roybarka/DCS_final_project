@@ -19,16 +19,21 @@ void GPIOconfig(void){
   P1SEL  &= ~BIT7;           // force GPIO
   P1SEL2 &= ~BIT7;
 
-  // --- Echo on P2.1 (TA1.1 capture input CCI1A) ---
-  P2DIR  &= ~BIT1;           // input
-  P2SEL  |=  BIT1;           // select TA1.1 on P2.1 (datasheet: P2.1 carries TA1.1) :contentReference[oaicite:8]{index=8}
-  P2SEL2 &= ~BIT1;
+  // --- Echo on P2.0 (TA1.0 capture input CCI0A) ---
+  P2DIR  &= ~BIT0;           // input
+  P2SEL  |=  BIT0;           // select TA1.0 on P2.0
+  P2SEL2 &= ~BIT0;
+
+  //LCD config
+  P2SEL  &= ~(BIT1|BIT2|BIT3|BIT4|BIT5|BIT6|BIT7);
+  P2SEL2 &= ~(BIT1|BIT2|BIT3|BIT4|BIT5|BIT6|BIT7);
+  P2OUT  &= ~(BIT1|BIT2|BIT3|BIT4|BIT5|BIT6|BIT7);
+  P2DIR  |=  (BIT1|BIT2|BIT3|BIT4|BIT5|BIT6|BIT7);
 
   // --- Timer1_A capture for Echo (both edges, sync, interrupt) ---
-  TA1CTL   = TASSEL_2 | MC_2 | TACLR;          // SMCLK, continuous, clear TAR. :contentReference[oaicite:9]{index=9}
-  TA1CCTL1 = CM_3     | CCIS_0 | SCS | CAP | CCIE; // both edges, CCIxA, sync, capture, IRQ. :contentReference[oaicite:10]{index=10}
-  TA1CCTL0 = 0;
-
+  TA1CTL   = TASSEL_2 | MC_2 | TACLR;            // SMCLK, continuous
+  TA1CCTL0 = CM_3 | CCIS_0 | SCS | CAP | CCIE;   // CCR0 now
+  TA1CCTL1 = 0;                                   // optional: ensure CCR1 is off
 }
 
 void PBconfig(void) {

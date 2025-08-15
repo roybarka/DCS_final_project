@@ -53,7 +53,7 @@ void init_trigger_gpio(void);
 #define LCD_RW(a)        (!a ? (P2OUT&=~0x80) : (P2OUT|=0x80))   // P2.7
 #define LCD_RW_DIR(a)    (!a ? (P2DIR&=~0x80) : (P2DIR|=0x80))
 
-#define LCD_DATA_OFFSET  0x04
+#define LCD_DATA_OFFSET  0x01   // maybe needs to be 0x01 to move 1-4 insted of 4-7
 
 #define FOURBIT_MODE     0x0
 #define EIGHTBIT_MODE    0x1

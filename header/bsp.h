@@ -7,10 +7,10 @@
 #define debounceVal 20000
 
 // =================== LCD ABSTRACTION ===================
-#define LCD_DATA_WRITE P1OUT
-#define LCD_DATA_DIR   P1DIR
-#define LCD_DATA_READ  P1IN
-#define LCD_DATA_SEL   P1SEL
+#define LCD_DATA_WRITE P2OUT
+#define LCD_DATA_DIR   P2DIR
+#define LCD_DATA_READ  P2IN
+#define LCD_DATA_SEL   P2SEL
 #define LCD_CTL_SEL    P2SEL
 
 // =================== PUSHBUTTONS ABSTRACTION ===================

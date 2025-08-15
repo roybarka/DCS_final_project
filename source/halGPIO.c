@@ -37,6 +37,7 @@ __interrupt void TIMER1_A1_ISR(void)
     switch (__even_in_range(TA1IV, TA1IV_TAIFG)) {
     case TA1IV_NONE: break;
     case TA1IV_TACCR1:
+
         if (cap_count == 0) {
             t_rise = TA1CCR1;
             cap_count = 1;
@@ -48,6 +49,7 @@ __interrupt void TIMER1_A1_ISR(void)
             measure_done = 1;
             __bic_SR_register_on_exit(LPM0_bits); // wake main for the print
         }
+
         break;
     case TA1IV_TACCR2:  break;
     case TA1IV_TAIFG:  // Overflow timeout (~65 ms @ 1 MHz)
@@ -55,6 +57,23 @@ __interrupt void TIMER1_A1_ISR(void)
         measure_done = 2;                    // mark timeout
         __bic_SR_register_on_exit(LPM0_bits);
         break;
+    }
+}
+
+// TIMER A1 ISR (Echo capture) -for P2.0
+#pragma vector = TIMER1_A0_VECTOR
+__interrupt void TIMER1_A0_ISR(void)
+{
+    if (cap_count == 0) {
+        t_rise = TA1CCR0;               // read CCR0
+        cap_count = 1;
+        __bic_SR_register_on_exit(LPM0_bits);
+    } else {
+        t_fall = TA1CCR0;               // read CCR0
+        if (t_fall >= t_rise) diff_ticks = t_fall - t_rise;
+        else                  diff_ticks = (unsigned)(t_fall + 65536u - t_rise);
+        measure_done = 1;
+        __bic_SR_register_on_exit(LPM0_bits);
     }
 }
 
@@ -303,10 +322,10 @@ void init_trigger_gpio(void)
 
 void init_echo_capture(void)
 {
-   P2SEL |= BIT1;
-   P2DIR &= ~BIT1;
-   TA1CTL = TASSEL_2 | MC_2 | TAIE;
-   TA1CCTL1 = CM_3 | CCIS_0 | SCS | CAP | CCIE;
+    P2SEL |= BIT0;          // use P2.0 as TA1.0 CCI0A
+    P2DIR &= ~BIT0;         // input
+    TA1CTL   = TASSEL_2 | MC_2;                 // SMCLK, continuous, overflow IRQ
+    TA1CCTL0 = CM_3 | CCIS_0 | SCS | CAP | CCIE;       // both edges on CCI0A, sync, capture, IRQ
 }
 
 void ADCconfig(void)
@@ -324,15 +343,16 @@ unsigned int send_trigger_pulse(void)
 {
     cap_count    = 0;
     measure_done = 0;
-    TA1CCTL1 &= ~(CCIFG | COV);
+    TA1CCTL0 &= ~(CCIFG | COV);   // <-- CCR0 instead of CCR1
     TA1CTL   |= TACLR;
-    TA1CTL |= TAIE;
     P1OUT |=  BIT7;
     __delay_cycles(200);
     P1OUT &= ~BIT7;
+    TA1CTL |= TAIE; // enable overflow iterupts (for if echo didnt reurn twice)
     while (!measure_done) {
         __bis_SR_register(LPM0_bits | GIE);
     }
+    TA1CTL   &= ~TAIE; // disable overflow iterupts (for if echo didnt reurn twice)
     return diff_ticks;
 }
 

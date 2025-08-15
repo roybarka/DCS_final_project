@@ -139,3 +139,10 @@ void LDRcalibrate(void) {
     }
 }
 
+
+void testlcd(){
+    lcd_init();
+    lcd_clear();
+    lcd_puts("this is a test");
+
+}
