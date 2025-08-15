@@ -5,7 +5,7 @@ import tkinter as tk
 from typing import Optional
 
 from msp_gui.msp_controller import MSPController
-from msp_gui.modes import Mode1View, Mode2View, Mode5FlashView
+from msp_gui.modes import Mode1View, Mode2View, Mode5FlashView, Mode6View
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +57,10 @@ class AppGUI(tk.Tk):
                   command=self._open_mode_5) \
             .grid(row=4, column=0, padx=6, pady=6, sticky="ew")
 
+        tk.Button(btns, text="מצב 6 – כיול LDR", width=35,  # NEW
+                  command=self._open_mode_6) \
+            .grid(row=5, column=0, padx=6, pady=6, sticky="ew")
+
         tk.Button(f, text="יציאה מהתוכנה", command=self._on_close).pack(pady=18)
 
         tk.Label(f, text="כל המצבים ייפתחו בתוך חלון זה. כרגע: מצבים 1 ,2 ו5 זמינים.", fg="#555").pack()
@@ -103,6 +107,12 @@ class AppGUI(tk.Tk):
 
     def _open_mode_5(self) -> None:
         view = Mode5FlashView(self, self.controller)
+        view.set_back_callback(self.navigate_to_menu)
+        self._mount_view(view)
+        view.start()
+
+    def _open_mode_6(self) -> None:  # NEW
+        view = Mode6View(self, self.controller)
         view.set_back_callback(self.navigate_to_menu)
         self._mount_view(view)
         view.start()
