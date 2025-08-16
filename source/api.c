@@ -1,5 +1,6 @@
 // =================== INCLUDES ===================
 #include "../header/api.h"
+#include "../header/flash.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -144,5 +145,54 @@ void testlcd(){
     lcd_init();
     lcd_clear();
     lcd_puts("this is a test");
+}
 
+// =================== FILE READING FUNCTIONS ===================
+
+// Display function for file selection mode
+static void display_file_info(void) {
+    lcd_clear();
+     volatile char idx_buf[2] = {0};  volatile char name_buf[11] = {0}; volatile char type_buf[4] = {0};
+    ltoa(current_file_idx, idx_buf);
+    strcpy(name_buf, file.file_name[current_file_idx]);
+    strcpy(type_buf, (file.file_type[current_file_idx] == text) ? "txt" : "scr");
+    lcd_puts(idx_buf); lcd_puts(") "); lcd_puts(name_buf);
+    lcd_new_line;
+    lcd_puts("file type: "); lcd_puts(type_buf);
+}
+
+// Display function for file content mode
+static void display_file_content(void) {
+    lcd_clear();
+    volatile char display_buf1[16] = {0};  // First line buffer
+    volatile char display_buf2[16] = {0};  // Second line buffer
+    char *file_start = file.file_ptr[current_file_idx];
+    int remaining = file.file_size[current_file_idx] - current_read_pos;
+    
+    // Copy first line (up to 15 chars)
+    int bytes_to_read = (remaining < 15) ? remaining : 15;
+    memcpy(display_buf1, file_start + current_read_pos, bytes_to_read);
+    
+    // Copy second line if there's more content
+    remaining -= bytes_to_read;
+    if (remaining > 0) {
+        bytes_to_read = (remaining < 15) ? remaining : 15;
+        memcpy(display_buf2, file_start + current_read_pos + 15, bytes_to_read);
+    }
+    // Display both lines
+    lcd_puts(display_buf1);
+    lcd_new_line;
+    lcd_puts(display_buf2);
+}
+
+// Main read function called from state7
+void ReadFiles(void) {
+    if (display_update_req) {
+        if (read_stage == Read_FileSelect) {
+            display_file_info();
+        } else if (read_stage == Read_FileDisplay) {
+            display_file_content();
+        }
+        display_update_req = 0;  // Clear the update flag
+    }
 }

@@ -6,6 +6,10 @@
 // =================== GENERAL ===================
 #define debounceVal 20000
 
+// =================== PUSH BUTTONS ===================
+#define PB0 BIT0    // Push Button 0 is P1.0
+#define PB1 BIT5    // Push Button 1 is P1.5
+
 // =================== LCD ABSTRACTION ===================
 #define LCD_DATA_WRITE P2OUT
 #define LCD_DATA_DIR   P2DIR
@@ -23,7 +27,6 @@
 #define PBsArrPortOut   P2OUT
 
 // =================== UART/LED ABSTRACTION ===================
-#define PB1   BIT0     // P2.0
 #define TXLED BIT0
 #define RXLED BIT6
 #define TXD   BIT2

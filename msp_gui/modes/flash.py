@@ -89,8 +89,8 @@ class Mode5FlashView(ModeBase):
 
         tk.Label(ctr, text="בחר פעולה:").pack(side="left", padx=(0, 10))
         tk.Button(ctr, text="Write", command=self._do_write).pack(side="left", padx=4)
-        tk.Button(ctr, text="Read", state="disabled",
-                  command=lambda: messagebox.showinfo("בקרוב", "קריאה טרם מומשה")).pack(side="left", padx=4)
+        tk.Button(ctr, text="Read", command=self._do_read).pack(side="left", padx=4)
+
         tk.Button(ctr, text="Execute", state="disabled",
                   command=lambda: messagebox.showinfo("בקרוב", "הרצה טרם מומשה")).pack(side="left", padx=4)
 
@@ -234,3 +234,6 @@ class Mode5FlashView(ModeBase):
                 self.lbl_status.config(text=f"שגיאה בשליחה: {e}")
         finally:
             self._busy = False
+
+    def _do_read(self):
+        self.controller.send_command('r')

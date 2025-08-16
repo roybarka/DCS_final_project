@@ -8,6 +8,8 @@ enum FSMstate state;
 enum main_states Main;
 enum flash_states flash_state;
 enum write_stages write_stage;
+enum read_stages read_stage;
+
 enum SYSmode lpm_mode;
 int p = 0;
 
@@ -15,6 +17,7 @@ int p = 0;
 void main(void){
   Main = detecor_sel;
   state = state8;
+  read_stage = Read_FileSelect;
   lpm_mode = mode0;
   sysConfig();
 
@@ -43,8 +46,11 @@ void main(void){
         Object_and_Light_Detector();
         break;
     case state6:
-        //LDRcalibrate();
-        testlcd();
+        LDRcalibrate();
+        __bis_SR_register(LPM0_bits + GIE);
+        break;
+    case state7:
+        ReadFiles();  // This function handles both display and sleep mode
         __bis_SR_register(LPM0_bits + GIE);
         break;
 

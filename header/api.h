@@ -15,6 +15,8 @@ void send_meas(unsigned int meas, unsigned int iter);
 void send_two_meas(unsigned int iter, unsigned int avg_meas, unsigned int dist);
 void save_LDR(unsigned int meas, unsigned int counter);
 void testlcd(void);
+void ReadFiles(void);
+
 
 #endif
 
