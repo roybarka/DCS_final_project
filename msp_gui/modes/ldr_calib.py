@@ -25,20 +25,16 @@ class Mode6LDRCalibView(ModeBase):
     # --- ModeBase hooks ---
 
     def on_start(self) -> None:
-        wrap = tk.Frame(self.body)
-        wrap.pack(fill="both", expand=True, padx=16, pady=16)
+        import tkinter.ttk as ttk
+        wrap = ttk.Frame(self.body, style="TFrame")
+        wrap.pack(fill="both", expand=True, padx=18, pady=18)
 
-        tk.Label(wrap, text="הכיול מתבצע בבקר. המתן להשלמה.",
-                 font=("Segoe UI", 12)).pack(anchor="w", pady=(0, 12))
-
-        tk.Label(wrap, text="סטטוס אחרון מהבקר:",
-                 font=("Segoe UI", 10, "bold")).pack(anchor="w")
-        tk.Label(wrap, textvariable=self._last_line_var, fg="#333")\
-            .pack(anchor="w", pady=(2, 0))
+        ttk.Label(wrap, text="הכיול מתבצע בבקר. המתן להשלמה.", style="Sub.TLabel").pack(anchor="w", pady=(0, 14))
+        ttk.Label(wrap, text="סטטוס אחרון מהבקר:", style="Sub.TLabel").pack(anchor="w")
+        ttk.Label(wrap, textvariable=self._last_line_var, style="TLabel").pack(anchor="w", pady=(2, 0))
 
         # (Optional) small note
-        tk.Label(wrap, text="ניתן לצאת בכל עת באמצעות הכפתור למעלה.",
-                 fg="#666").pack(anchor="w", pady=(12, 0))
+        ttk.Label(wrap, text="ניתן לצאת בכל עת באמצעות הכפתור למעלה.", style="TLabel").pack(anchor="w", pady=(14, 0))
 
     def on_stop(self) -> None:
         # no special cleanup needed

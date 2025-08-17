@@ -33,6 +33,18 @@ void send_two_meas(unsigned int iter, unsigned int avg_meas, unsigned int dist) 
     ser_output(newline);
 }
 
+
+// =================== LDR CALIBRATION SENDER ===================
+void send_LDR_calibration_values(void) {
+    unsigned int* ldr_calib_addr = (unsigned int*)0x1000;
+    unsigned int calib_value;
+    int i;
+    for (i = 0; i < 10; i++) {
+        calib_value = ldr_calib_addr[i];
+        send_meas(calib_value, i); // Reuse send_meas to send value and index
+    }
+}
+
 // =================== FSM / HIGH-LEVEL ROUTINES ===================
 
 // Objects Detector
@@ -81,23 +93,26 @@ void Telemeter(void) {
     }
 }
 
-// Light Detector
+// Light Detector (mode 3): scan angles 0-179, move servo, sample LDR, send angle:value
 void Light_Detector(void) {
+    init_trigger_gpio();
+    deg = 600;
+    TACCR1 = deg;
+    TACCTL1 = OUTMOD_7;
+    TACTL = TASSEL_2 | MC_1;
+    __delay_cycles(300000);
     while(state==state3){
-        int iter;
-        unsigned int avg_meas;
+        int iter, ldr_val;
         deg = 600;
         TACCR1 = deg;
-        TACCTL1 = OUTMOD_7;
-        TACTL = TASSEL_2 | MC_1;
-        __delay_cycles(100000);
+        __delay_cycles(20000);
         for (iter = 0; iter < 180 && state==state3; iter++) {
             deg += 10;
             TACCR1 = deg;
-            __delay_cycles(100000);
-            avg_meas = LDRmeas();
-            send_meas(avg_meas, iter);
-            __delay_cycles(50000);
+            __delay_cycles(20000);
+            ldr_val = LDRmeas();
+            send_meas(ldr_val, iter); // send as angle:value
+            __delay_cycles(3000);
         }
     }
 }

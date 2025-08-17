@@ -19,6 +19,12 @@ class AppGUI(tk.Tk):
         super().__init__()
         self.title("MSP Controller – Control Panel")
         self.geometry("900x650")
+        self.configure(bg="#f4f6fa")
+
+        # Use ttk for modern widgets
+        import tkinter.ttk as ttk
+        self.ttk = ttk
+        self._init_styles()
 
         self.controller = controller
         self._active_view: Optional[tk.Frame] = None
@@ -28,42 +34,43 @@ class AppGUI(tk.Tk):
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
+    def _init_styles(self):
+        style = self.ttk.Style(self)
+        style.theme_use("clam")
+        style.configure("TFrame", background="#f4f6fa")
+        style.configure("TLabel", background="#f4f6fa", font=("Segoe UI", 11))
+        style.configure("Title.TLabel", font=("Segoe UI", 18, "bold"), foreground="#2d415a", background="#f4f6fa")
+        style.configure("Sub.TLabel", font=("Segoe UI", 12), foreground="#4a6073", background="#f4f6fa")
+        style.configure("TButton", font=("Segoe UI", 11), padding=8, background="#e3eaf2", foreground="#2d415a")
+        style.map("TButton",
+                  background=[("active", "#d0d8e8"), ("pressed", "#b8c2d1")],
+                  foreground=[("active", "#1a2633")])
+        style.configure("Exit.TButton", font=("Segoe UI", 11, "bold"), background="#f8d7da", foreground="#721c24")
+        style.map("Exit.TButton",
+                  background=[("active", "#f5c6cb"), ("pressed", "#f1b0b7")],
+                  foreground=[("active", "#721c24")])
+
     # ---- Menu ----
 
     def _build_menu(self) -> tk.Frame:
-        f = tk.Frame(self, padx=16, pady=16)
-        tk.Label(f, text="בחר מצב עבודה", font=("Segoe UI", 16, "bold")).pack(pady=(0, 12))
-        tk.Label(f, text=f"Serial: {self.controller.ser.port} @ {self.controller.ser.baudrate} baud")\
-            .pack(pady=(0, 16))
+        ttk = self.ttk
+        f = ttk.Frame(self, padding=24, style="TFrame")
+        ttk.Label(f, text="בחר מצב עבודה", style="Title.TLabel").pack(pady=(0, 14))
+        ttk.Label(f, text=f"Serial: {self.controller.ser.port} @ {self.controller.ser.baudrate} baud", style="Sub.TLabel").pack(pady=(0, 18))
 
-        btns = tk.Frame(f)
-        btns.pack(pady=8)
+        btns = ttk.Frame(f, style="TFrame")
+        btns.pack(pady=10)
 
-        tk.Button(btns, text="מצב 1 – Sonar Object Detector", width=35,
-                  command=self._open_mode_1)\
-            .grid(row=0, column=0, padx=6, pady=6, sticky="ew")
+        ttk.Button(btns, text="מצב 1 – Sonar Object Detector", width=35, command=self._open_mode_1, style="TButton").grid(row=0, column=0, padx=8, pady=8, sticky="ew")
+        ttk.Button(btns, text="מצב 2 – Angle Motor Rotation", width=35, command=self._open_mode_2, style="TButton").grid(row=1, column=0, padx=8, pady=8, sticky="ew")
+        ttk.Button(btns, text="מצב 3 – LDR Light Detector (GUI soon)", width=35, state="disabled", style="TButton").grid(row=2, column=0, padx=8, pady=8, sticky="ew")
+        ttk.Button(btns, text="מצב 4 – Object + Light (GUI soon)", width=35, state="disabled", style="TButton").grid(row=3, column=0, padx=8, pady=8, sticky="ew")
+        ttk.Button(btns, text="מצב 5 – ניהול קבצים (Flash)", width=35, command=self._open_mode_5, style="TButton").grid(row=4, column=0, padx=8, pady=8, sticky="ew")
+        ttk.Button(btns, text="מצב 6 – כיול LDR", width=35, command=self._open_mode_6, style="TButton").grid(row=5, column=0, padx=8, pady=8, sticky="ew")
 
-        tk.Button(btns, text="מצב 2 – Angle Motor Rotation", width=35,
-                  command=self._open_mode_2)\
-            .grid(row=1, column=0, padx=6, pady=6, sticky="ew")
+        ttk.Button(f, text="יציאה מהתוכנה", command=self._on_close, style="Exit.TButton").pack(pady=22)
 
-        # Placeholders for future GUI modes
-        tk.Button(btns, text="מצב 3 – LDR Light Detector (GUI soon)", width=35, state="disabled")\
-            .grid(row=2, column=0, padx=6, pady=6, sticky="ew")
-        tk.Button(btns, text="מצב 4 – Object + Light (GUI soon)", width=35, state="disabled")\
-            .grid(row=3, column=0, padx=6, pady=6, sticky="ew")
-
-        tk.Button(btns, text="מצב 5 – ניהול קבצים (Flash)", width=35,
-                  command=self._open_mode_5) \
-            .grid(row=4, column=0, padx=6, pady=6, sticky="ew")
-
-        tk.Button(btns, text="מצב 6 – כיול LDR", width=35,  # NEW
-                  command=self._open_mode_6) \
-            .grid(row=5, column=0, padx=6, pady=6, sticky="ew")
-
-        tk.Button(f, text="יציאה מהתוכנה", command=self._on_close).pack(pady=18)
-
-        tk.Label(f, text="כל המצבים ייפתחו בתוך חלון זה. כרגע: מצבים 1 ,2 ו5 זמינים.", fg="#555").pack()
+        ttk.Label(f, text="כל המצבים ייפתחו בתוך חלון זה. כרגע: מצבים 1 ,2 ו5 זמינים.", style="Sub.TLabel").pack(pady=(8, 0))
         return f
 
     # ---- Navigation ----

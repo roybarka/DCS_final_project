@@ -12,6 +12,9 @@ enum SYSmode lpm_mode;
 int p = 0;
 
 
+
+
+
 void main(void){
   Main = detecor_sel;
   state = state8;
@@ -37,9 +40,11 @@ void main(void){
         Telemeter();
         break;
     case state3:
+        send_LDR_calibration_values();
         Light_Detector();
         break;
     case state4:
+        send_LDR_calibration_values();
         Object_and_Light_Detector();
         break;
     case state6:
