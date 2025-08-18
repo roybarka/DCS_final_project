@@ -4,7 +4,7 @@
 #include "../header/bsp.h"
 #include "../header/main.h"
 
-#define RX_BUF_SIZE 80
+#define RX_BUF_SIZE 60
 #define RX_EOF_CHAR '\n'
 #define EOF_CHAR '+'
 
@@ -15,6 +15,9 @@ extern enum main_states Main;
 extern enum flash_states flash_state;
 extern enum write_stages write_stage;
 extern enum read_stages read_stage;
+extern enum execute_stages execute_stage;
+
+
 
 // Flash reading state variables (shared between ISR and API)
 extern volatile unsigned char current_file_idx;     // Current file being viewed/selected
@@ -23,8 +26,8 @@ extern volatile unsigned char display_update_req;   // Flag to indicate display 
 
 extern enum SYSmode lpm_mode;
 extern char deg_array[5];
-extern int j;
-extern int change_deg;
+extern char j;
+extern char change_deg;
 extern volatile int temp[2];
 extern volatile float diff;
 extern volatile unsigned int deg;

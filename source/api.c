@@ -6,6 +6,9 @@
 #include <string.h>
 #include <math.h>
 
+// Number of repeated LDR samples to average during calibration (mode 6)
+#define CAL_SAMPLES 15
+
 // =================== STATIC/OUTPUT HELPERS ===================
 static char newline[] = " \r\n";
 static char dst_char[5];
@@ -34,6 +37,21 @@ void send_two_meas(unsigned int iter, unsigned int avg_meas, unsigned int dist) 
     ser_output(newline);
 }
 
+// Progress messages for LDR calibration (mode 6)
+static void send_calib_progress(unsigned int step /*1..10*/) {
+    // Format: "6:<step>" + newline
+    ltoa(step, dst_char);
+    ser_output("6:");
+    ser_output(dst_char);
+    ser_output(newline);
+}
+
+static void send_calib_done(void) {
+    // Format: "6:DONE" + newline
+    ser_output("6:DONE");
+    ser_output(newline);
+}
+
 // =================== FSM / HIGH-LEVEL ROUTINES ===================
 
 // Objects Detector
@@ -54,14 +72,17 @@ void Objects_Detector(void) {
         TA1CTL = TASSEL_2 | MC_2;
         __delay_cycles(300000);
         for (iter = 0; iter < 180 && state==state1; iter++) {
-            IE2 &= UCA0RXIE;
-            deg += 10;
+            deg = 600 + (10 * iter);
             TACCR1 = deg;
-            __delay_cycles(20000);
-            for (iter_meas = 0; iter_meas < 7; iter_meas++) {
+            TACTL = TASSEL_2 | MC_1;
+            __delay_cycles(25000);
+            TACTL = TASSEL_2 | MC_0;
+            for (iter_meas = 0; iter_meas < 10; iter_meas++) {
+                IE2 &= UCA0RXIE;
                 dist = send_trigger_pulse();
                 send_meas(dist,iter);
-                __delay_cycles(3000);
+                IE2 |= UCA0RXIE;
+                __delay_cycles(13000);
             }
         }
     }
@@ -71,34 +92,41 @@ void Objects_Detector(void) {
 void Telemeter(void) {
     telemetr_config();
     telemeter_deg_update();
+    int dist;
     __delay_cycles(1000000);
     while(state==state2 & change_deg==0) {
-        int dist;
         IE2 &= UCA0RXIE;
         dist = send_trigger_pulse();
         send_meas(dist,deg);
         IE2 |= UCA0RXIE;
-        __delay_cycles(10000);
+        __delay_cycles(15000);
     }
 }
 
-// Light Detector
+// Light Detector (mode 3): scan angles 0-179, move servo, sample LDR, send angle:value
 void Light_Detector(void) {
+    init_trigger_gpio();
+    deg = 600;
+    TACCR1 = deg;
+    TACCTL1 = OUTMOD_7;
+    TACTL = TASSEL_2 | MC_1;
+    int sample;
+    int iter, ldr_val;
+    __delay_cycles(300000);
     while(state==state3){
-        int iter;
-        unsigned int avg_meas;
         deg = 600;
         TACCR1 = deg;
-        TACCTL1 = OUTMOD_7;
-        TACTL = TASSEL_2 | MC_1;
-        __delay_cycles(100000);
+        __delay_cycles(50000);
         for (iter = 0; iter < 180 && state==state3; iter++) {
-            deg += 10;
+            deg = 600 + (10 * iter);
             TACCR1 = deg;
-            __delay_cycles(100000);
-            avg_meas = LDRmeas();
-            send_meas(avg_meas, iter);
-            __delay_cycles(50000);
+            __delay_cycles(5000);
+            // Take multiple samples per angle to allow robust aggregation on host
+            for (sample = 0; sample < 15; sample++) {
+            ldr_val = LDRmeas();
+            send_meas(ldr_val, iter); // send as angle:value
+            __delay_cycles(1000);
+            }
         }
     }
 }
@@ -130,16 +158,49 @@ void Object_and_Light_Detector(void) {
 
 void LDRcalibrate(void) {
     if (pb_pressed) {
-        unsigned int measurement = LDRmeas();
-        save_LDR(measurement, measureCounter);
+        // Capture and store current calibration measurement
+        unsigned int step = measureCounter + 1; // 1..10 for user display
+        // Take multiple consecutive samples and average them to reduce noise
+        unsigned long sum = 0UL; // avoid overflow while accumulating
+        int k;
+        for (k = 0; k < CAL_SAMPLES; k++) {
+            sum += (unsigned long)LDRmeas();
+            __delay_cycles(1000);  // short gap between samples
+        }
+        unsigned int avg = (unsigned int)((sum + (CAL_SAMPLES / 2)) / CAL_SAMPLES); // rounded mean
+        save_LDR(avg, measureCounter);
+
+        // Notify host about progress (which step was recorded)
+        send_calib_progress(step);
+
+    // Advance counter and, if finished, notify completion
         measureCounter++;
-        if(measureCounter == 10){
+        if (measureCounter >= 10) {
+            send_calib_done();
             measureCounter = 0;
         }
+
         pb_pressed = 0;  // Clear the flag
+    } else {
+        TACCR1 = 1500;
+        TACCTL1 = OUTMOD_7;
+        TACTL = TASSEL_2 | MC_1;
+        __delay_cycles(1000000);
+        TACTL = TASSEL_2 | MC_0;
+
     }
 }
 
+// =================== LDR CALIBRATION SENDER ===================
+void send_LDR_calibration_values(void) {
+    unsigned int* ldr_calib_addr = (unsigned int*)0x1000;
+    unsigned int calib_value;
+    int i;
+    for (i = 0; i < 10; i++) {
+        calib_value = ldr_calib_addr[i];
+        send_meas(calib_value, i); // Reuse send_meas to send value and index
+    }
+}
 
 void testlcd(){
     lcd_init();
@@ -196,3 +257,24 @@ void ReadFiles(void) {
         display_update_req = 0;  // Clear the update flag
     }
 }
+
+// =================== FILE Executing FUNCTIONS ===================
+
+void ExecuteScript(void) {
+    if (display_update_req) {
+        if (execute_stage == Execute_FileSelect) {
+            display_file_info();
+        }
+        display_update_req = 0;
+    }
+    
+    if (execute_stage == Execute_Running) {
+        // TODO: Implement script execution
+        state = state8;  // Return to sleep state after execution
+        Main = detecor_sel;
+        flash_state = Flash_SelectOp;
+    }    
+}
+
+
+

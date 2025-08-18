@@ -8,10 +8,8 @@
 
 // =================== GLOBAL VARIABLES ===================
 char deg_array[5];
-int j=0;
-int delay_flag = 0;
-int state_flag = 0;
-int change_deg = 0;
+char j=0;
+char change_deg = 0;
 volatile int temp[2];
 
 // Flash reading state variables
@@ -93,8 +91,10 @@ __interrupt void ADC10_ISR(void) {
 #pragma vector=PORT1_VECTOR
 __interrupt void Port_1_ISR(void){
     delay(debounceVal);
+    delay(debounceVal);
+    delay(debounceVal);
 
-    // Handle Flash Reading state
+    // Handle Flash Reading and Executing states
     if (flash_state == Flash_Reading) {
         if (read_stage == Read_FileSelect) {
             if (P1IFG & PB0) {
@@ -128,6 +128,25 @@ __interrupt void Port_1_ISR(void){
                 read_stage = Read_FileSelect;
                 current_read_pos = 0;
                 display_update_req = 1;  // Request display update
+            }
+        }
+    }
+    // Handle Execute state
+    else if (flash_state == Flash_Executing && execute_stage == Execute_FileSelect) {
+        if (P1IFG & PB0) {
+            // Move to next file (with wrap-around)
+            current_file_idx++;
+            if (current_file_idx >= file.num_of_files) {
+                current_file_idx = 0;
+            }
+            display_update_req = 1;  // Request display update
+        }
+        else if (P1IFG & PB1) {
+            // Select current file if it's a script file
+            if (file.file_type[current_file_idx] == script) {
+                execute_stage = Execute_Running;
+                state = state9;  // Switch to execute state
+                display_update_req = 1;
             }
         }
     }
@@ -213,7 +232,13 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
                     display_update_req = 1;  // Request initial display update
                     j = 0; 
                 }
-                else if (DataFromPC[0] == 'e') { flash_state = Flash_Executing; j = 0; }
+                else if (DataFromPC[0] == 'e') { 
+                    flash_state = Flash_Executing; 
+                    execute_stage = Execute_FileSelect;
+                    state = state9;  // Set state9 for execute mode
+                    display_update_req = 1;  // Request initial display update
+                    j = 0; 
+                }
                 else if (DataFromPC[0] == 'w') { flash_state = Flash_Writing; write_stage = Write_WaitName; j = 0; }
                 else if (DataFromPC[0] == '8') { flash_state = Flash_SelectOp; j = 0; Main = detecor_sel;}
                 else {j = 0;}
