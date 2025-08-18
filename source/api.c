@@ -15,6 +15,13 @@ static char dst_char[5];
 static char deg_char[7];
 static char Light_char[5];
 
+// Global variables
+volatile unsigned int delay_time = 100;  // Default delay of 100ms
+
+// LCD counter variables
+static volatile unsigned int lcd_counter = 0;     // Current counter value for LCD
+unsigned char empty = ' ';
+
 // =================== OUTPUT HELPER FUNCTIONS ===================
 void send_meas(unsigned int meas, unsigned int iter) {
     ltoa(iter, deg_char);
@@ -208,6 +215,48 @@ void testlcd(){
     lcd_puts("this is a test");
 }
 
+// =================== LCD FUNCTIONS ===================
+static void count_up_LCD(void) {
+    lcd_counter++;
+    lcd_clear();
+    volatile char num_buf[6] = {0};
+    ltoa(lcd_counter, num_buf);
+    lcd_puts(num_buf);
+    timer_delay_ms(delay_time);  // Use configured delay between counts
+}
+
+static void count_down_LCD(void) {
+    if (lcd_counter > 0) {
+        lcd_counter--;
+        lcd_clear();
+        volatile char num_buf[6] = {0};
+        ltoa(lcd_counter, num_buf);
+        lcd_puts(num_buf);
+        timer_delay_ms(delay_time);  // Use configured delay between counts
+    }
+}
+
+void rrc_lcd(char asci){
+    lcd_clear();
+    lcd_home();
+    int i = 0;
+    for (i=0; i<16; i++) {
+        lcd_data(asci);
+        timer_delay_ms(delay_time);
+        lcd_cursor_left();
+        lcd_data(empty);
+    }
+    lcd_cmd(0xC0);
+    int j = 0;
+        for (j=0; j<16; j++) {
+            lcd_data(asci);
+            timer_delay_ms(delay_time);
+            lcd_cursor_left();
+            lcd_data(empty);
+        }
+}
+
+
 // =================== FILE READING FUNCTIONS ===================
 
 // Display function for file selection mode
@@ -260,16 +309,116 @@ void ReadFiles(void) {
 
 // =================== FILE Executing FUNCTIONS ===================
 
+// Helper function to convert hex string to integer
+static unsigned int hex2int(char *hex) {
+    unsigned int result = 0;
+    while (*hex) {
+        result = result * 16;
+        if (*hex >= '0' && *hex <= '9')
+            result += *hex - '0';
+        else if (*hex >= 'A' && *hex <= 'F')
+            result += *hex - 'A' + 10;
+        else if (*hex >= 'a' && *hex <= 'f')
+            result += *hex - 'a' + 10;
+        hex++;
+    }
+    return result;
+}
+
+static void RunScript(void) {
+    char *script_pointers = file.file_ptr[current_file_idx];  // Current script pointer
+    volatile char OPCstr[2], flash_argument[2], flash_argument2[2];
+    unsigned int arg2ToInt, X, start, stop;
+    unsigned int y = 0;
+    unsigned int file_size = file.file_size[current_file_idx];
+
+    while (y < file_size) {
+        // Read opcode (2 bytes)
+        OPCstr[0] = *script_pointers++;
+        OPCstr[1] = *script_pointers++;
+        y += 2;
+
+        switch (OPCstr[1]) {
+            case '1':  // inc_lcd
+                flash_argument[0] = *script_pointers++;
+                flash_argument[1] = *script_pointers++;
+                y += 2;
+                arg2ToInt = hex2int(flash_argument);
+                lcd_counter = 0;  // Initialize counter to 0 before counting up
+                lcd_clear();
+                while (arg2ToInt--) {
+                    count_up_LCD();
+                }
+                break;
+
+            case '2':  // dec_lcd
+                flash_argument[0] = *script_pointers++;
+                flash_argument[1] = *script_pointers++;
+                y += 2;
+                arg2ToInt = hex2int(flash_argument);
+                lcd_counter = arg2ToInt;  // Initialize counter to target value before counting down
+                lcd_clear();
+                while (arg2ToInt--) {
+                    count_down_LCD();
+                }
+                break;
+
+            case '3':  // rra_lcd
+                flash_argument[0] = *script_pointers++;
+                flash_argument[1] = *script_pointers++;
+                y += 2;
+                arg2ToInt = hex2int(flash_argument);
+                rrc_lcd((char)arg2ToInt);
+                break;
+
+            case '4':  // set_delay
+                flash_argument[0] = *script_pointers++;
+                flash_argument[1] = *script_pointers++;
+                y += 2;
+                //delay_time = hex2int(flash_argument) * 10; // units of 10ms
+                break;
+
+            case '5':  // clear_lcd
+                lcd_clear();
+                break;
+
+            case '6':  // servo_deg
+                flash_argument[0] = *script_pointers++;
+                flash_argument[1] = *script_pointers++;
+                y += 2;
+                X = hex2int(flash_argument);
+                deg = 600 + (10 * X);  // Convert to servo position
+                TACCR1 = deg;          // Set servo position
+                break;
+
+            case '7':  // servo_scan
+                flash_argument[0] = *script_pointers++;
+                flash_argument[1] = *script_pointers++;
+                y += 2;
+                flash_argument2[0] = *script_pointers++;
+                flash_argument2[1] = *script_pointers++;
+                y += 2;
+                start = hex2int(flash_argument);
+                stop = hex2int(flash_argument2);
+                // TODO: Implement scan between angles
+                break;
+
+            case '8':  // sleep
+                // No parameters needed
+                break;
+        }
+    }
+}
+
 void ExecuteScript(void) {
     if (display_update_req) {
         if (execute_stage == Execute_FileSelect) {
             display_file_info();
         }
         display_update_req = 0;
-    }
-    
+    }    
     if (execute_stage == Execute_Running) {
-        // TODO: Implement script execution
+        RunScript();  // Execute the selected script
         state = state8;  // Return to sleep state after execution
         Main = detecor_sel;
         flash_state = Flash_SelectOp;

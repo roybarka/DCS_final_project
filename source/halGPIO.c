@@ -363,6 +363,41 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
 }
 
 
+// =================== TIMER FUNCTIONS ===================
+
+// Configure Timer A0 with given counter value
+void TIMER_A0_config(unsigned int counter) {
+    TACCR0 = counter;
+    TACCTL0 = CCIE;                            // Enable Timer A0 CCR0 interrupt
+    TA0CTL = TASSEL_2 + MC_1 + ID_3;          // SMCLK, Up mode, /8 divider
+    TA0CTL |= TACLR;                          // Clear timer
+}
+
+// Delay function using Timer A0
+void timer_delay_ms(unsigned int ms) {
+    unsigned int num_of_halfSec = ms / 500;    // Number of 500ms intervals
+    unsigned int remaining_ms = ms % 500;      // Remaining milliseconds
+    
+    // Handle 500ms intervals
+    while(num_of_halfSec--) {
+        TIMER_A0_config(HALF_SEC_TICKS);
+        __bis_SR_register(LPM0_bits + GIE);    // Enter LPM0 with interrupts
+    }
+    
+    // Handle remaining time if any
+    if (remaining_ms > 0) {
+        TIMER_A0_config(MS_TO_TICKS(remaining_ms));
+        __bis_SR_register(LPM0_bits + GIE);    // Enter LPM0 with interrupts
+    }
+}
+
+// Timer A0 interrupt service routine
+#pragma vector = TIMER0_A0_VECTOR
+__interrupt void Timer_A0_ISR(void) {
+    TACCTL0 &= ~CCIE;                         // Disable Timer A0 CCR0 interrupt
+    __bic_SR_register_on_exit(LPM0_bits);     // Exit LPM0 on return
+}
+
 // =================== SYSTEM & HARDWARE CONFIGURATION ===================
 
 void sysConfig(void){ 
