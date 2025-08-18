@@ -54,3 +54,12 @@ class MSPController:
             logger.info("Serial closed.")
         except Exception as e:
             logger.warning("Serial close error: %s", e)
+
+    def flush_input(self) -> None:
+        """Clear any pending bytes/lines waiting in the serial input buffer."""
+        try:
+            # reset_input_buffer is non-blocking and clears OS buffers too
+            self.ser.reset_input_buffer()
+            logger.debug("Serial input buffer flushed")
+        except Exception as e:
+            logger.warning("Serial flush error: %s", e)

@@ -10,7 +10,7 @@ from msp_gui.msp_controller import MSPController
 logging.basicConfig(level=os.environ.get("MSP_GUI_LOGLEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s: %(message)s")
 
-DEFAULT_PORT = "COM4"
+DEFAULT_PORT = "COM9"
 DEFAULT_BAUD = 9600
 
 

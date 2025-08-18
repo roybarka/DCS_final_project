@@ -26,7 +26,8 @@ class ModeBase(tk.Frame):
                  title: str,
                  enter_command: Optional[str] = None,
                  exit_command: str = DEFAULT_EXIT_CMD):
-        super().__init__(master)
+        import tkinter.ttk as ttk
+        super().__init__(master, bg="#f4f6fa")
         self.controller = controller
         self.enter_command = enter_command
         self.exit_command = exit_command
@@ -35,15 +36,14 @@ class ModeBase(tk.Frame):
         self._listener_thread: Optional[threading.Thread] = None
         self._back_cb: Optional[Callable[[], None]] = None
 
-        # UI: top bar + body container
-        top = tk.Frame(self)
-        top.pack(fill="x", pady=(6, 6))
+        # UI: top bar + body container (ttk for modern look)
+        top = ttk.Frame(self, style="TFrame")
+        top.pack(fill="x", pady=(10, 8))
 
-        tk.Label(top, text=title, font=("Segoe UI", 14, "bold")).pack(side="left", padx=8)
-        tk.Button(top, text="עצור וחזור לתפריט", command=self._on_back_pressed)\
-            .pack(side="right", padx=8)
+        ttk.Label(top, text=title, style="Title.TLabel").pack(side="left", padx=10)
+        ttk.Button(top, text="עצור וחזור לתפריט", command=self._on_back_pressed, style="TButton").pack(side="right", padx=10)
 
-        self.body = tk.Frame(self)
+        self.body = ttk.Frame(self, style="TFrame")
         self.body.pack(fill="both", expand=True)
 
     # ----- Lifecycle -----
@@ -60,6 +60,11 @@ class ModeBase(tk.Frame):
         self._stop_event.clear()
 
         if self.enter_command is not None:
+            # Flush any stray lines from the previous mode before switching
+            try:
+                self.controller.flush_input()
+            except Exception:
+                pass
             self.controller.send_command(self.enter_command)
 
         self.on_start()

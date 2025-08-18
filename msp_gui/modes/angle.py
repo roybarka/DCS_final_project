@@ -66,27 +66,28 @@ class Mode2View(ModeBase):
     # ----- ModeBase hooks -----
 
     def on_start(self) -> None:
+        import tkinter.ttk as ttk
         # Controls row
-        ctr = tk.Frame(self.body)
-        ctr.pack(fill="x", padx=8, pady=(8, 4))
+        ctr = ttk.Frame(self.body, style="TFrame")
+        ctr.pack(fill="x", padx=12, pady=(12, 6))
 
-        tk.Label(ctr, text="זווית (0–179):").pack(side="left")
-        spin = tk.Spinbox(ctr, from_=0, to=179, width=5, textvariable=self.angle_var)
-        spin.pack(side="left", padx=(6, 10))
+        ttk.Label(ctr, text="זווית (0–179):", style="Sub.TLabel").pack(side="left")
+        spin = tk.Spinbox(ctr, from_=0, to=179, width=5, textvariable=self.angle_var, font=("Segoe UI", 11))
+        spin.pack(side="left", padx=(6, 12))
 
-        tk.Button(ctr, text="סובב לזווית", command=self._apply_angle).pack(side="left", padx=(0, 10))
+        ttk.Button(ctr, text="סובב לזווית", command=self._apply_angle, style="TButton").pack(side="left", padx=(0, 14))
 
         # Live readout row
-        info = tk.Frame(self.body)
-        info.pack(fill="x", padx=8, pady=(4, 8))
+        info = ttk.Frame(self.body, style="TFrame")
+        info.pack(fill="x", padx=12, pady=(6, 12))
 
-        tk.Label(info, text="זווית נבחרת:", font=("Segoe UI", 10, "bold")).pack(side="left")
-        self.lbl_angle_value = tk.Label(info, text="—")
-        self.lbl_angle_value.pack(side="left", padx=(4, 20))
+        ttk.Label(info, text="זווית נבחרת:", style="Sub.TLabel").pack(side="left")
+        self.lbl_angle_value = ttk.Label(info, text="—", style="TLabel")
+        self.lbl_angle_value.pack(side="left", padx=(4, 24))
 
-        tk.Label(info, text="מרחק:", font=("Segoe UI", 10, "bold")).pack(side="left")
-        self.lbl_dist_value = tk.Label(info, text="— cm")
-        self.lbl_dist_value.pack(side="left", padx=(4, 20))
+        ttk.Label(info, text="מרחק:", style="Sub.TLabel").pack(side="left")
+        self.lbl_dist_value = ttk.Label(info, text="— cm", style="TLabel")
+        self.lbl_dist_value.pack(side="left", padx=(4, 24))
 
         # Plot
         self.figure = Figure(figsize=(6.5, 5.0))
@@ -94,7 +95,7 @@ class Mode2View(ModeBase):
         self._configure_axes()
 
         self.canvas = FigureCanvasTkAgg(self.figure, master=self.body)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         self.canvas.draw()
 
         # Initial angle: send '2' (no newline) then default angle with newline

@@ -90,9 +90,7 @@ class Mode5FlashView(ModeBase):
         tk.Label(ctr, text="בחר פעולה:").pack(side="left", padx=(0, 10))
         tk.Button(ctr, text="Write", command=self._do_write).pack(side="left", padx=4)
         tk.Button(ctr, text="Read", command=self._do_read).pack(side="left", padx=4)
-
-        tk.Button(ctr, text="Execute", state="disabled",
-                  command=lambda: messagebox.showinfo("בקרוב", "הרצה טרם מומשה")).pack(side="left", padx=4)
+        tk.Button(ctr, text="Execute",command=self._do_execute).pack(side="left", padx=4)
 
         # Metadata panel
         info = tk.LabelFrame(self.body, text="מידע קובץ")
@@ -235,5 +233,18 @@ class Mode5FlashView(ModeBase):
         finally:
             self._busy = False
 
-    def _do_read(self):
+    def _do_read(self) -> None:
+        if self._busy:
+            return
+        self._busy = True
+
+        # 1) Tell controller: we choose READ
         self.controller.send_command('r')
+
+    def _do_execute(self) -> None:
+        if self._busy:
+            return
+        self._busy = True
+
+        # 1) Tell controller: we choose READ
+        self.controller.send_command('e')
