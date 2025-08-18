@@ -4,13 +4,13 @@ LDR calibration and value-to-distance conversion utilities.
 
 from typing import List, Optional
 
-# Fixed mapping of indices 0..9 to distances in cm (now 4..40)
-DISTANCES: List[int] = [4 * (i + 1) for i in range(10)]  # 4,8,...,40
+# Fixed mapping of indices 0..9 to distances in cm (now 3..30)
+DISTANCES: List[int] = [3 * (i + 1) for i in range(10)]  # 3,6,...,30
 
 
 class LDRCalibration:
     """
-    Holds 10 calibration values, each corresponding to distances 4, 8, ..., 40 cm
+    Holds 10 calibration values, each corresponding to distances 3, 6, ..., 30 cm
     at indices 0..9 respectively. Provides fast value-to-distance conversion using
     binary search with linear interpolation.
 

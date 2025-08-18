@@ -36,12 +36,28 @@ class ModeBase(tk.Frame):
         self._listener_thread: Optional[threading.Thread] = None
         self._back_cb: Optional[Callable[[], None]] = None
 
-        # UI: top bar + body container (ttk for modern look)
+        # UI: top bar + status bar + body container (ttk for modern look)
         top = ttk.Frame(self, style="TFrame")
-        top.pack(fill="x", pady=(10, 8))
+        top.pack(fill="x", pady=(10, 5))
 
-        ttk.Label(top, text=title, style="Title.TLabel").pack(side="left", padx=10)
-        ttk.Button(top, text="עצור וחזור לתפריט", command=self._on_back_pressed, style="TButton").pack(side="right", padx=10)
+        # Title and back button row
+        title_frame = ttk.Frame(top, style="TFrame")
+        title_frame.pack(fill="x")
+        
+        ttk.Label(title_frame, text=title, style="Title.TLabel").pack(side="left", padx=10)
+        ttk.Button(title_frame, text="🔙 Stop and Return to Menu", command=self._on_back_pressed, style="TButton").pack(side="right", padx=10)
+
+        # Status row
+        self.status_frame = ttk.Frame(self, style="TFrame")
+        self.status_frame.pack(fill="x", pady=(5, 10))
+        
+        # Status indicators
+        self.status_var = tk.StringVar(value="Initializing...")
+        self.connection_var = tk.StringVar(value="🟢 Connected")
+        
+        ttk.Label(self.status_frame, text="Status:", style="Sub.TLabel").pack(side="left", padx=(10, 5))
+        ttk.Label(self.status_frame, textvariable=self.status_var, style="TLabel").pack(side="left")
+        ttk.Label(self.status_frame, textvariable=self.connection_var, style="Status.TLabel").pack(side="right", padx=10)
 
         self.body = ttk.Frame(self, style="TFrame")
         self.body.pack(fill="both", expand=True)
@@ -121,6 +137,17 @@ class ModeBase(tk.Frame):
         self.after(UI_FPS_MS, self._tick)
 
     # ----- Hooks for subclasses -----
+
+    def update_status(self, message: str) -> None:
+        """Update the status message displayed in the status bar."""
+        if hasattr(self, 'status_var'):
+            self.status_var.set(message)
+
+    def update_connection_status(self, connected: bool) -> None:
+        """Update the connection status indicator."""
+        if hasattr(self, 'connection_var'):
+            status = "🟢 Connected" if connected else "🔴 Disconnected"
+            self.connection_var.set(status)
 
     def on_start(self) -> None:
         """Build per-mode UI + initialize state (called on start)."""

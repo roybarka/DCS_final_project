@@ -28,6 +28,7 @@ extern enum SYSmode lpm_mode;
 extern char deg_array[5];
 extern char j;
 extern char change_deg;
+extern char exit_flag;
 extern volatile int temp[2];
 extern volatile float diff;
 extern volatile unsigned int deg;

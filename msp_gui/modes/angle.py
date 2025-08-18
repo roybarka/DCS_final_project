@@ -90,12 +90,12 @@ class Mode2View(ModeBase):
         self.lbl_dist_value.pack(side="left", padx=(4, 24))
 
         # Plot
-        self.figure = Figure(figsize=(6.5, 5.0))
+        self.figure = Figure(figsize=(10, 7), facecolor='white')
         self.ax = self.figure.add_subplot(111, polar=True)
         self._configure_axes()
 
         self.canvas = FigureCanvasTkAgg(self.figure, master=self.body)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
         self.canvas.draw()
 
         # Initial angle: send '2' (no newline) then default angle with newline
@@ -167,6 +167,23 @@ class Mode2View(ModeBase):
         self.ax.set_thetamin(0)
         self.ax.set_thetamax(MAX_ANGLE_DEG)
         self.ax.set_rlim(0, PLOT_R_MAX_CM)
+        
+        # Add title and improve formatting
+        self.ax.set_title("Servo Motor Angle Control\nDistance Measurement", pad=20, fontsize=14, fontweight='bold')
+        self.ax.set_ylabel("Distance (cm)", labelpad=30, fontsize=12)
+        self.ax.grid(True, alpha=0.3)
+        
+        # Add degree markings
+        theta_ticks = range(0, 180, 30)
+        self.ax.set_thetagrids(theta_ticks, [f"{t}°" for t in theta_ticks])
+        
+        # Create legend
+        from matplotlib.lines import Line2D
+        legend_elements = [
+            Line2D([0], [0], color='C0', linewidth=3, label='🎯 Servo Direction'),
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='C0', markersize=10, label='📏 Distance Point'),
+        ]
+        self.ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(0.02, 0.98), fontsize=10)
 
     def _apply_angle(self) -> None:
         """Button: send '2' (no newline) then the chosen angle with newline."""

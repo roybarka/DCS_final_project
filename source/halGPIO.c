@@ -10,6 +10,7 @@
 char deg_array[5];
 char j=0;
 char change_deg = 0;
+char exit_flag = 0;
 volatile int temp[2];
 
 // Flash reading state variables
@@ -253,6 +254,7 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
             case Flash_Executing:
                 // Placeholder: upon newline, return to selector
                 if (DataFromPC[j-1] == RX_EOF_CHAR) { flash_state = Flash_SelectOp; j = 0; }
+                if (DataFromPC[0] == '8') {exit_flag = 1;}
                 break;
 
             case Flash_Writing:

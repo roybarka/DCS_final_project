@@ -87,13 +87,13 @@ class Mode1View(ModeBase):
         # Reset state
         self._distances_cm = [None] * MAX_ANGLE_DEG
 
-        # Build plot
-        self.figure = Figure(figsize=(6.5, 6.0))
+        # Build plot with larger size
+        self.figure = Figure(figsize=(10, 8), facecolor='white')
         self.ax = self.figure.add_subplot(111, polar=True)
         self._configure_axes()
 
         self.canvas = FigureCanvasTkAgg(self.figure, master=self.body)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
         self.canvas.draw()
 
         # Prepare batch for listener loop
@@ -216,6 +216,25 @@ class Mode1View(ModeBase):
         self.ax.set_thetamin(0)
         self.ax.set_thetamax(MAX_ANGLE_DEG)
         self.ax.set_rlim(0, PLOT_R_MAX_CM)
+        
+        # Add title and improve formatting
+        self.ax.set_title("Sonar Object Detection\nPolar View", pad=20, fontsize=14, fontweight='bold')
+        self.ax.set_ylabel("Distance (cm)", labelpad=30, fontsize=12)
+        self.ax.grid(True, alpha=0.3)
+        
+        # Add degree markings
+        theta_ticks = range(0, 180, 30)
+        self.ax.set_thetagrids(theta_ticks, [f"{t}°" for t in theta_ticks])
+        
+        # Create legend elements (will be added during render)
+        from matplotlib.lines import Line2D
+        from matplotlib.patches import Patch
+        legend_elements = [
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='lime', markersize=8, label='🔍 Scan Points'),
+            Line2D([0], [0], color='red', linewidth=3, label='🎯 Detected Objects'),
+            Patch(facecolor='white', edgecolor='blue', alpha=0.6, label='📊 Object Info')
+        ]
+        self.ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(0.02, 0.98), fontsize=10)
 
     def _finalize_batch(self) -> None:
         res = self._batch.summarize()

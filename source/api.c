@@ -16,7 +16,7 @@ static char deg_char[7];
 static char Light_char[5];
 
 // Global variables
-volatile unsigned int delay_time = 100;  // Default delay of 100ms
+volatile unsigned int delay_time = 500;  // Default delay of 500ms
 
 // LCD counter variables
 static volatile unsigned int lcd_counter = 0;     // Current counter value for LCD
@@ -101,7 +101,7 @@ void Telemeter(void) {
     telemeter_deg_update();
     int dist;
     __delay_cycles(1000000);
-    while(state==state2 & change_deg==0) {
+    while((state==state2 & change_deg==0) || (state==state9 & exit_flag==0)) {
         IE2 &= UCA0RXIE;
         dist = send_trigger_pulse();
         send_meas(dist,deg);
@@ -375,7 +375,7 @@ static void RunScript(void) {
                 flash_argument[0] = *script_pointers++;
                 flash_argument[1] = *script_pointers++;
                 y += 2;
-                //delay_time = hex2int(flash_argument) * 10; // units of 10ms
+                delay_time = hex2int(flash_argument) * 10; // units of 10ms
                 break;
 
             case '5':  // clear_lcd
@@ -386,9 +386,11 @@ static void RunScript(void) {
                 flash_argument[0] = *script_pointers++;
                 flash_argument[1] = *script_pointers++;
                 y += 2;
-                X = hex2int(flash_argument);
-                deg = 600 + (10 * X);  // Convert to servo position
-                TACCR1 = deg;          // Set servo position
+                //X = hex2int(flash_argument);
+                strcpy(deg_array, flash_argument);
+                ser_output("2");
+                Telemeter();
+                exit_flag = 0;
                 break;
 
             case '7':  // servo_scan
