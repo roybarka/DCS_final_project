@@ -37,15 +37,15 @@ void GPIOconfig(void){
 }
 
 void PBconfig(void) {
-    // Configure PB1 (P1.0) as input with pull-up and interrupt
-    P1DIR &= ~BIT0;      // Set P1.3 as input
-    P1SEL &= ~BIT0;
-    P1SEL2 &= ~BIT0;
-    P1REN |= BIT0;       // Enable pull-up/down resistor
-    P1OUT |= BIT0;       // Set as pull-up
-    P1IES |= BIT0;       // Interrupt on falling edge
-    P1IE |= BIT0;        // Enable interrupt for P1.3
-    P1IFG &= ~BIT0;      // Clear interrupt flag
+    // Configure both PB0 and PB1 as inputs with pull-ups and interrupts
+    P1DIR &= ~(PB0 + PB1);      // Set as inputs
+    P1SEL &= ~(PB0 + PB1);      // GPIO function
+    P1SEL2 &= ~(PB0 + PB1);     // GPIO function
+    P1REN |= (PB0 + PB1);       // Enable pull-up/down resistors
+    P1OUT |= (PB0 + PB1);       // Set as pull-up
+    P1IES |= (PB0 + PB1);       // Interrupt on falling edge
+    P1IE |= (PB0 + PB1);        // Enable interrupts
+    P1IFG &= ~(PB0 + PB1);      // Clear interrupt flags
 }
 
 //-------------------------------------------------------------------------------------

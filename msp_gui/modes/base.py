@@ -60,6 +60,11 @@ class ModeBase(tk.Frame):
         self._stop_event.clear()
 
         if self.enter_command is not None:
+            # Flush any stray lines from the previous mode before switching
+            try:
+                self.controller.flush_input()
+            except Exception:
+                pass
             self.controller.send_command(self.enter_command)
 
         self.on_start()

@@ -23,7 +23,7 @@ CLUSTER_MAX_GAP_CM = 10      # split a cluster if jump > this
 CLUSTER_MIN_SIZE = 30        # min contiguous points after trimming
 BEAM_WIDTH_DEG = 30          # trim beam edges (±15°)
 MAX_SAMPLES_PER_ANGLE = 10
-SAME_VALUE_TOLERANCE_CM = 4  # within ±4 cm → same cluster
+SAME_VALUE_TOLERANCE_CM = 2.5  # within ±4 cm → same cluster
 
 
 def deg_to_rad(deg: float) -> float:

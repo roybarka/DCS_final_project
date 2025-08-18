@@ -14,6 +14,9 @@ enum flash_states{Flash_SelectOp, Flash_Reading, Flash_Executing, Flash_Writing}
 // Writing sub-stages
 enum write_stages{Write_WaitName, Write_WaitType, Write_WaitSize, Write_WaitContent};
 
+// Reading sub-stages
+enum read_stages{Read_FileSelect, Read_FileDisplay};
+
 // Legacy/aux enums (kept, extended)
 enum StatusReceive{Name,Type,Size,Content};
 enum FileType{script,text};

@@ -13,6 +13,11 @@ int delay_flag = 0;
 int state_flag = 0;
 int change_deg = 0;
 volatile int temp[2];
+
+// Flash reading state variables
+volatile unsigned char current_file_idx = 0;     // Current file being viewed/selected
+volatile unsigned int current_read_pos = 0;      // Current position in file for display
+volatile unsigned char display_update_req = 0;   // Flag to indicate display needs updating
 volatile float diff;
 volatile unsigned char pb_pressed = 0;
 volatile unsigned int measureCounter = 0;
@@ -88,12 +93,55 @@ __interrupt void ADC10_ISR(void) {
 #pragma vector=PORT1_VECTOR
 __interrupt void Port_1_ISR(void){
     delay(debounceVal);
-    if (P1IFG & BIT0) {  // Check if interrupt was triggered by P1.0 (PB0)
-        if (state == state6) {
-            pb_pressed = 1;  // Set flag for main loop
+    delay(debounceVal);
+    delay(debounceVal);
+
+    // Handle Flash Reading state
+    if (flash_state == Flash_Reading) {
+        if (read_stage == Read_FileSelect) {
+            if (P1IFG & PB0) {
+                // Move to next file (with wrap-around)
+                current_file_idx++;
+                if (current_file_idx >= file.num_of_files) {current_file_idx = 0;                }
+                display_update_req = 1;  // Request display update
+            }
+            else if (P1IFG & PB1) {
+                // Select current file if it's a text file
+                if (file.file_type[current_file_idx] == text) {
+                    read_stage = Read_FileDisplay;
+                    current_read_pos = 0;  // Start from beginning of file
+                    display_update_req = 1;  // Request display update
+                }
+            }
         }
-        P1IFG &= ~BIT0;  // Clear P1.3 interrupt flag
+        else if (read_stage == Read_FileDisplay) {
+            if (P1IFG & PB0) {
+                // Move to next page if there's more content
+                if (current_read_pos < file.file_size[current_file_idx]) {
+                    current_read_pos += 32;  // Move forward by display width
+                    if (current_read_pos > file.file_size[current_file_idx]) {
+                        current_read_pos = file.file_size[current_file_idx];
+                    }
+                    display_update_req = 1;  // Request display update
+                }
+            }
+            else if (P1IFG & PB1) {
+                // Return to file selection
+                read_stage = Read_FileSelect;
+                current_read_pos = 0;
+                display_update_req = 1;  // Request display update
+            }
+        }
     }
+    // Handle LDR calibration
+    else if ((P1IFG & PB0) && (state == state6)) {
+        pb_pressed = 1;  // Set flag for main loop
+    }
+
+
+
+    // Clear interrupt flags and exit LPM0
+    P1IFG &= ~(PB0 + PB1);  // Clear both PB interrupt flags
     __bic_SR_register_on_exit(LPM0_bits);  // Exit LPM0
 }
 
@@ -160,15 +208,23 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
         switch (flash_state) {
             case Flash_SelectOp:
                 // Expect: 'r' (read), 'e' (execute), 'w' (write)
-                if (DataFromPC[0] == 'r') { flash_state = Flash_Reading; j = 0; }
+                if (DataFromPC[0] == 'r') { 
+                    flash_state = Flash_Reading;
+                    read_stage = Read_FileSelect;
+                    state = state7;  // Set state7 for read mode
+                    display_update_req = 1;  // Request initial display update
+                    j = 0; 
+                }
                 else if (DataFromPC[0] == 'e') { flash_state = Flash_Executing; j = 0; }
                 else if (DataFromPC[0] == 'w') { flash_state = Flash_Writing; write_stage = Write_WaitName; j = 0; }
+                else if (DataFromPC[0] == '8') { flash_state = Flash_SelectOp; j = 0; Main = detecor_sel;}
                 else {j = 0;}
                 break;
 
             case Flash_Reading:
                 // Placeholder: upon newline, return to selector
                 if (DataFromPC[j-1] == RX_EOF_CHAR) { flash_state = Flash_SelectOp; j = 0; }
+                if (DataFromPC[0] == '8') { flash_state = Flash_SelectOp; j = 0; Main = detecor_sel;}
                 break;
 
             case Flash_Executing:

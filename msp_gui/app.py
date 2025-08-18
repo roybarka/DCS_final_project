@@ -5,7 +5,14 @@ import tkinter as tk
 from typing import Optional
 
 from msp_gui.msp_controller import MSPController
-from msp_gui.modes import Mode1View, Mode2View, Mode5FlashView, Mode6View
+from msp_gui.modes import (
+    Mode1View,
+    Mode2View,
+    Mode3View,
+    Mode4View,
+    Mode5FlashView,
+    Mode6View,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,14 +70,13 @@ class AppGUI(tk.Tk):
 
         ttk.Button(btns, text="מצב 1 – Sonar Object Detector", width=35, command=self._open_mode_1, style="TButton").grid(row=0, column=0, padx=8, pady=8, sticky="ew")
         ttk.Button(btns, text="מצב 2 – Angle Motor Rotation", width=35, command=self._open_mode_2, style="TButton").grid(row=1, column=0, padx=8, pady=8, sticky="ew")
-        ttk.Button(btns, text="מצב 3 – LDR Light Detector (GUI soon)", width=35, state="disabled", style="TButton").grid(row=2, column=0, padx=8, pady=8, sticky="ew")
-        ttk.Button(btns, text="מצב 4 – Object + Light (GUI soon)", width=35, state="disabled", style="TButton").grid(row=3, column=0, padx=8, pady=8, sticky="ew")
+        ttk.Button(btns, text="מצב 3 – LDR Light Detector", width=35, command=self._open_mode_3, style="TButton").grid(row=2, column=0, padx=8, pady=8, sticky="ew")
+        ttk.Button(btns, text="מצב 4 – Object + Light", width=35, command=self._open_mode_4, style="TButton").grid(row=3, column=0, padx=8, pady=8, sticky="ew")
         ttk.Button(btns, text="מצב 5 – ניהול קבצים (Flash)", width=35, command=self._open_mode_5, style="TButton").grid(row=4, column=0, padx=8, pady=8, sticky="ew")
         ttk.Button(btns, text="מצב 6 – כיול LDR", width=35, command=self._open_mode_6, style="TButton").grid(row=5, column=0, padx=8, pady=8, sticky="ew")
 
         ttk.Button(f, text="יציאה מהתוכנה", command=self._on_close, style="Exit.TButton").pack(pady=22)
-
-        ttk.Label(f, text="כל המצבים ייפתחו בתוך חלון זה. כרגע: מצבים 1 ,2 ו5 זמינים.", style="Sub.TLabel").pack(pady=(8, 0))
+        ttk.Label(f, text="כל המצבים ייפתחו בתוך חלון זה.", style="Sub.TLabel").pack(pady=(8, 0))
         return f
 
     # ---- Navigation ----
@@ -120,6 +126,18 @@ class AppGUI(tk.Tk):
 
     def _open_mode_6(self) -> None:  # NEW
         view = Mode6View(self, self.controller)
+        view.set_back_callback(self.navigate_to_menu)
+        self._mount_view(view)
+        view.start()
+
+    def _open_mode_3(self) -> None:
+        view = Mode3View(self, self.controller)
+        view.set_back_callback(self.navigate_to_menu)
+        self._mount_view(view)
+        view.start()
+
+    def _open_mode_4(self) -> None:
+        view = Mode4View(self, self.controller)
         view.set_back_callback(self.navigate_to_menu)
         self._mount_view(view)
         view.start()
