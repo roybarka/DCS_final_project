@@ -9,15 +9,18 @@ enum main_states Main;
 enum flash_states flash_state;
 enum write_stages write_stage;
 enum read_stages read_stage;
+enum execute_stages execute_stage;
+
 
 enum SYSmode lpm_mode;
-int p = 0;
+char p = 0;
 
 
 void main(void){
   Main = detecor_sel;
   state = state8;
   read_stage = Read_FileSelect;
+  execute_stage = Execute_FileSelect;
   lpm_mode = mode0;
   sysConfig();
 
@@ -55,6 +58,11 @@ void main(void){
         ReadFiles();  // This function handles both display and sleep mode
         __bis_SR_register(LPM0_bits + GIE);
         break;
+    case state9:
+        ExecuteScript();  // This function handles script execution
+        __bis_SR_register(LPM0_bits + GIE);
+        break;
+
 
     }
   }

@@ -17,6 +17,9 @@ enum write_stages{Write_WaitName, Write_WaitType, Write_WaitSize, Write_WaitCont
 // Reading sub-stages
 enum read_stages{Read_FileSelect, Read_FileDisplay};
 
+// Executing sub-stages
+enum execute_stages{Execute_FileSelect, Execute_Running};
+
 // Legacy/aux enums (kept, extended)
 enum StatusReceive{Name,Type,Size,Content};
 enum FileType{script,text};

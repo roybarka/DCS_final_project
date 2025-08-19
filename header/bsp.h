@@ -6,6 +6,12 @@
 // =================== GENERAL ===================
 #define debounceVal 20000
 
+// =================== TIMER CONSTANTS ===================
+#define CLK_FREQ 1000000  // 1MHz
+#define CLK_DIV 8         // Timer divider
+#define MS_TO_TICKS(ms) ((CLK_FREQ / CLK_DIV / 1000) * ms)
+#define HALF_SEC_TICKS MS_TO_TICKS(500)
+
 // =================== PUSH BUTTONS ===================
 #define PB0 BIT0    // Push Button 0 is P1.0
 #define PB1 BIT5    // Push Button 1 is P1.5

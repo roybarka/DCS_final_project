@@ -10,6 +10,7 @@
 #define FLASH_SEGMENT_SIZE 512
 #define FLASH_SEGMENT_MASK (~(FLASH_SEGMENT_SIZE - 1u))
 #define TEMP_BUFFER_SIZE 64
+
 Files file;
 char* current_write_positions[10];  // Track current write position for each file
 

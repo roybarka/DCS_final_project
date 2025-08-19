@@ -5,6 +5,9 @@
 #include "../header/halGPIO.h"
 #include "../header/main.h"
 
+// Global variables
+extern volatile unsigned int delay_time;  // Delay time in milliseconds for LCD operations
+
 // =================== API FUNCTION PROTOTYPES ===================
 void Objects_Detector(void);
 void Telemeter(void);
@@ -17,6 +20,7 @@ void save_LDR(unsigned int meas, unsigned int counter);
 void send_LDR_calibration_values(void);
 void testlcd(void);
 void ReadFiles(void);
+void ExecuteScript(void);
 
 
 #endif
