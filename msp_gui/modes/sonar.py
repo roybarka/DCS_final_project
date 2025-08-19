@@ -70,9 +70,12 @@ class Mode1View(ModeBase):
       - Renders a polar scatter and overlays detected object arcs
     """
 
-    def __init__(self, master: tk.Misc, controller: MSPController):
+    def __init__(self, master: tk.Misc, controller: MSPController, flash_integration: bool = False):
         super().__init__(master, controller, title="מצב 1 – Sonar Object Detector",
-                         enter_command="1", exit_command="8")
+                         enter_command="1" if not flash_integration else None, 
+                         exit_command="8")
+        self._flash_integration = flash_integration  # True when opened from flash mode
+        
         # Data model: distances per angle (None if missing)
         self._distances_cm: List[Optional[float]] = [None] * MAX_ANGLE_DEG
 
@@ -84,20 +87,26 @@ class Mode1View(ModeBase):
     # ----- ModeBase hooks -----
 
     def on_start(self) -> None:
+        # Clear any residual data from previous modes
+        self.controller.flush_input()
+        
         # Reset state
         self._distances_cm = [None] * MAX_ANGLE_DEG
 
-        # Build plot
-        self.figure = Figure(figsize=(6.5, 6.0))
+        # Build plot with larger size
+        self.figure = Figure(figsize=(10, 8), facecolor='white')
         self.ax = self.figure.add_subplot(111, polar=True)
         self._configure_axes()
 
         self.canvas = FigureCanvasTkAgg(self.figure, master=self.body)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
         self.canvas.draw()
 
         # Prepare batch for listener loop
         self._batch = AngleBatch()
+        
+        # Update status
+        self.update_status("Mode started - scanning for objects...")
 
     def on_stop(self) -> None:
         # Destroy canvas widget to free resources
@@ -108,6 +117,15 @@ class Mode1View(ModeBase):
         self.canvas = None
 
     def handle_line(self, line: str) -> None:
+        # Check for '8' command from firmware when in flash integration mode
+        if self._flash_integration and line.strip() == "8":
+            logger.info("Sonar mode received '8' - scan finished, closing mode")
+            # Stop the mode and return to flash
+            self.stop()
+            if self._back_cb:
+                self._back_cb()
+            return
+            
         # Parse "angle:micros"
         try:
             a_s, us_s = line.split(":")
@@ -117,17 +135,23 @@ class Mode1View(ModeBase):
             if not (0 <= angle < MAX_ANGLE_DEG) or dist_cm <= 0:
                 return
         except ValueError:
+            # Log non-matching lines for debugging
+            logger.debug(f"Mode1 received non-parseable line: '{line}'")
             return
 
         # Accumulate samples per angle
         b = self._batch
         if b.angle is None:
             b.reset(angle, dist_cm)
+            # Update status when starting a new angle
+            self.update_status(f"Scanning angle {angle}° - collecting samples...")
             return
 
         if angle != b.angle:
             self._finalize_batch()
             b.reset(angle, dist_cm)
+            # Update status when moving to new angle
+            self.update_status(f"Scanning angle {angle}° - collecting samples...")
             return
 
         b.add(dist_cm)
@@ -216,6 +240,25 @@ class Mode1View(ModeBase):
         self.ax.set_thetamin(0)
         self.ax.set_thetamax(MAX_ANGLE_DEG)
         self.ax.set_rlim(0, PLOT_R_MAX_CM)
+        
+        # Add title and improve formatting
+        self.ax.set_title("Sonar Object Detection\nPolar View", pad=20, fontsize=14, fontweight='bold')
+        self.ax.set_ylabel("Distance (cm)", labelpad=30, fontsize=12)
+        self.ax.grid(True, alpha=0.3)
+        
+        # Add degree markings
+        theta_ticks = range(0, 180, 30)
+        self.ax.set_thetagrids(theta_ticks, [f"{t}°" for t in theta_ticks])
+        
+        # Create legend elements (will be added during render)
+        from matplotlib.lines import Line2D
+        from matplotlib.patches import Patch
+        legend_elements = [
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='lime', markersize=8, label='* Scan Points'),
+            Line2D([0], [0], color='red', linewidth=3, label='-> Detected Objects'),
+            Patch(facecolor='white', edgecolor='blue', alpha=0.6, label='[i] Object Info')
+        ]
+        self.ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(0.02, 0.98), fontsize=10)
 
     def _finalize_batch(self) -> None:
         res = self._batch.summarize()

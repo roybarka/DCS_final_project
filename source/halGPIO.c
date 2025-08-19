@@ -173,8 +173,6 @@ void __attribute__ ((interrupt(USCIAB0TX_VECTOR))) USCI0TX_ISR (void)
 #error Compiler not supported!
 #endif
 {
-    if(state == state5) UCA0TXBUF = '5';
-    if(state == state9) UCA0TXBUF = '9';
     IE2 &= ~UCA0TXIE;                       // Disable USCI_A0 TX interrupt
 }
 
@@ -491,7 +489,7 @@ unsigned int send_trigger_pulse(void)
     unsigned int safety_counter = 0;
     while (!measure_done && safety_counter < 50000) { // Added safety timeout
         __bis_SR_register(LPM0_bits | GIE);  // Enter low power mode with interrupts enabled
-        safety_counter++;  // Increment safety counter
+
     }
     
     // If we reached the safety counter limit, set measure_done to timeout

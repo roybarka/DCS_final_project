@@ -43,7 +43,7 @@ class Mode2View(ModeBase):
       - UI shows the selected angle + live robust distance and a simple polar line.
     """
 
-    def __init__(self, master: tk.Misc, controller: MSPController):
+    def __init__(self, master: tk.Misc, controller: MSPController, script_mode: bool = False):
         # We handle the initial '2' + angle ourselves in on_start
         super().__init__(master, controller,
                          title="מצב 2 – Angle Motor Rotation",
@@ -52,6 +52,7 @@ class Mode2View(ModeBase):
         # State
         self._current_angle: Optional[int] = None
         self._recent_cm: List[float] = []
+        self._script_mode = script_mode  # True when opened from flash execution
 
         # UI
         self.angle_var = tk.StringVar(value="90")
@@ -67,6 +68,9 @@ class Mode2View(ModeBase):
 
     def on_start(self) -> None:
         import tkinter.ttk as ttk
+        # Clear any residual data from previous modes
+        self.controller.flush_input()
+        
         # Controls row
         ctr = ttk.Frame(self.body, style="TFrame")
         ctr.pack(fill="x", padx=12, pady=(12, 6))
@@ -75,7 +79,14 @@ class Mode2View(ModeBase):
         spin = tk.Spinbox(ctr, from_=0, to=179, width=5, textvariable=self.angle_var, font=("Segoe UI", 11))
         spin.pack(side="left", padx=(6, 12))
 
-        ttk.Button(ctr, text="סובב לזווית", command=self._apply_angle, style="TButton").pack(side="left", padx=(0, 14))
+        apply_btn = ttk.Button(ctr, text="סובב לזווית", command=self._apply_angle, style="TButton")
+        apply_btn.pack(side="left", padx=(0, 14))
+        
+        # Disable controls in script mode
+        if self._script_mode:
+            spin.config(state="disabled")
+            apply_btn.config(state="disabled")
+            ttk.Label(ctr, text="(Script Mode - Servo Controlled by Firmware)", style="Sub.TLabel").pack(side="left", padx=(10, 0))
 
         # Live readout row
         info = ttk.Frame(self.body, style="TFrame")
@@ -90,20 +101,33 @@ class Mode2View(ModeBase):
         self.lbl_dist_value.pack(side="left", padx=(4, 24))
 
         # Plot
-        self.figure = Figure(figsize=(6.5, 5.0))
+        self.figure = Figure(figsize=(10, 7), facecolor='white')
         self.ax = self.figure.add_subplot(111, polar=True)
         self._configure_axes()
 
         self.canvas = FigureCanvasTkAgg(self.figure, master=self.body)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
         self.canvas.draw()
 
-        # Initial angle: send '2' (no newline) then default angle with newline
-        initial = int(self.angle_var.get())
-        self._current_angle = initial
-        self._recent_cm.clear()
-        self.controller.send_command('2')                 # no newline
-        self.controller.send_command(f"{initial}\n")      # angle with newline
+        # Initialize state differently based on mode
+        if self._script_mode:
+            # In script mode, we accept whatever angle the firmware sends
+            self._current_angle = None  # Will be set from first received data
+            self._recent_cm.clear()
+            self.update_status("Script mode - waiting for angle data from firmware...")
+            # Don't send any commands - the firmware is in control
+        else:
+            # In manual mode, we control the angle
+            initial = int(self.angle_var.get())
+            self._current_angle = initial
+            self._recent_cm.clear()
+            
+            # Update status
+            self.update_status(f"Manual mode - setting initial angle to {initial}°")
+            
+            # Send initial angle command
+            self.controller.send_command('2')                 # no newline
+            self.controller.send_command(f"{initial}\n")      # angle with newline
 
     def on_stop(self) -> None:
         if self.canvas:
@@ -115,7 +139,17 @@ class Mode2View(ModeBase):
         self._current_angle = None
 
     def handle_line(self, line: str) -> None:
-        """Expect 'angle:micros' and accept only samples for the selected angle."""
+        """Expect 'angle:micros' and accept samples based on mode."""
+        
+        # Check for '8' command from firmware when in flash integration mode (though servo_deg doesn't auto-end)
+        if self._script_mode and line.strip() == "8":
+            logger.info("Angle mode received '8' - operation finished, closing mode")
+            # Stop the mode and return to flash
+            self.stop()
+            if self._back_cb:
+                self._back_cb()
+            return
+            
         try:
             a_s, us_s = line.split(":")
             angle = int(a_s)
@@ -124,14 +158,37 @@ class Mode2View(ModeBase):
             if cm <= 0:
                 return
         except ValueError:
+            # Log non-matching lines for debugging
+            logger.debug(f"Mode2 received non-parseable line: '{line}'")
             return
 
-        if self._current_angle is None or angle != self._current_angle:
-            return
+        if self._script_mode:
+            # In script mode, accept any angle and update our current angle
+            if self._current_angle is None:
+                self._current_angle = angle
+                self.angle_var.set(str(angle))  # Update the UI spinbox
+                self.update_status(f"Script mode - servo at {angle}°, collecting measurements...")
+            elif angle != self._current_angle:
+                # Angle changed in script, update our tracking
+                self._current_angle = angle
+                self.angle_var.set(str(angle))
+                self._recent_cm.clear()  # Reset measurements for new angle
+                self.update_status(f"Script mode - servo moved to {angle}°, collecting measurements...")
+        else:
+            # In manual mode, only accept data for the angle we commanded
+            if self._current_angle is None or angle != self._current_angle:
+                logger.debug(f"Mode2 ignoring angle {angle}, expecting {self._current_angle}")
+                return
 
         self._recent_cm.append(cm)
         if len(self._recent_cm) > MAX_SAMPLES:
             del self._recent_cm[:-MAX_SAMPLES]
+            
+        # Update status with latest measurement
+        if self._script_mode:
+            self.update_status(f"Script mode - measuring angle {angle}° - {len(self._recent_cm)} samples collected")
+        else:
+            self.update_status(f"Manual mode - measuring angle {angle}° - {len(self._recent_cm)} samples collected")
 
     def render(self) -> None:
         # Labels
@@ -141,7 +198,12 @@ class Mode2View(ModeBase):
         else:
             self.lbl_angle_value.config(text=f"{self._current_angle}°")
             cm = robust_mean(self._recent_cm)
-            self.lbl_dist_value.config(text=f"{cm:.1f} cm" if cm is not None else "— cm")
+            if cm is not None:
+                self.lbl_dist_value.config(text=f"{cm:.1f} cm")
+                # Update connection status to show active measurement
+                self.update_connection_status(True)
+            else:
+                self.lbl_dist_value.config(text="— cm")
 
         # Plot
         if not (self.ax and self.canvas):
@@ -152,9 +214,18 @@ class Mode2View(ModeBase):
             a = deg_to_rad(self._current_angle)
             cm = robust_mean(self._recent_cm)
             r = PLOT_R_MAX_CM if cm is None else min(cm, PLOT_R_MAX_CM)
-            self.ax.plot([a, a], [0, r], linewidth=2)
-            if cm is not None:
-                self.ax.scatter([a], [cm], s=30)
+            
+            # Draw servo direction line
+            self.ax.plot([a, a], [0, r], linewidth=3, color='blue', alpha=0.8, label='Servo Direction')
+            
+            # Draw measurement point if we have valid data
+            if cm is not None and cm <= PLOT_R_MAX_CM:
+                self.ax.scatter([a], [cm], s=50, color='red', zorder=5, label='Distance Measurement')
+                
+                # Add text annotation with distance
+                self.ax.text(a, cm + 5, f"{cm:.1f} cm", 
+                           ha="center", va="bottom", fontsize=10, fontweight='bold',
+                           bbox=dict(facecolor="white", alpha=0.8, edgecolor="black"))
 
         self.canvas.draw_idle()
 
@@ -167,18 +238,46 @@ class Mode2View(ModeBase):
         self.ax.set_thetamin(0)
         self.ax.set_thetamax(MAX_ANGLE_DEG)
         self.ax.set_rlim(0, PLOT_R_MAX_CM)
+        
+        # Add title and improve formatting
+        self.ax.set_title("Servo Motor Angle Control\nDistance Measurement", pad=20, fontsize=14, fontweight='bold')
+        self.ax.set_ylabel("Distance (cm)", labelpad=30, fontsize=12)
+        self.ax.grid(True, alpha=0.3)
+        
+        # Add degree markings
+        theta_ticks = range(0, 180, 30)
+        self.ax.set_thetagrids(theta_ticks, [f"{t}°" for t in theta_ticks])
+        
+        # Create legend
+        from matplotlib.lines import Line2D
+        legend_elements = [
+            Line2D([0], [0], color='C0', linewidth=3, label='-> Servo Direction'),
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='C0', markersize=10, label='* Distance Point'),
+        ]
+        self.ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(0.02, 0.98), fontsize=10)
 
     def _apply_angle(self) -> None:
-        """Button: send '2' (no newline) then the chosen angle with newline."""
+        """Button: send '2' (no newline) then the chosen angle with newline. Only works in manual mode."""
+        if self._script_mode:
+            self.update_status("Cannot change angle in script mode - servo controlled by firmware")
+            return
+            
         try:
             val = int(self.angle_var.get())
         except Exception:
+            self.update_status("Error: Invalid angle value")
             return
         if not (0 <= val < 180):
+            self.update_status("Error: Angle must be between 0-179°")
             return
 
         self._current_angle = val
         self._recent_cm.clear()
 
+        # Update status before sending command
+        self.update_status(f"Manual mode - setting servo to angle {val}°...")
+
         self.controller.send_command('2')           # no newline
         self.controller.send_command(f"{val}\n")    # angle with newline
+        
+        logger.info(f"Mode2: Commanded servo to angle {val}°")
