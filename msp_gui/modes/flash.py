@@ -15,31 +15,17 @@ from msp_gui.modes.base import ModeBase
 from msp_gui.msp_controller import MSPController
 from msp_gui.translators.script_encoder import encode_script_text  # NEW
 
+# Import telemetry utilities from angle.py
+from msp_gui.modes.angle import (
+    MAX_ANGLE_DEG, US_TO_CM, PLOT_R_MAX_CM, MAX_SAMPLES, SAME_VALUE_TOLERANCE_CM,
+    deg_to_rad, robust_mean
+)
+
 
 # ---- Protocol constants (keep EOF sentinel) ----
 RX_EOF = b"\n"
 EOF_CHAR = b"+"     # final-chunk terminator
 CHUNK_SIZE = 60      # safe for RX_BUF_SIZE = 80 (allows delimiter + headroom)
-
-# ---- Constants for telemetry sub-mode ----
-MAX_ANGLE_DEG = 180           # angles 0..179 inclusive
-US_TO_CM = 1.0 / 58.0         # HC-SR04-ish conversion
-PLOT_R_MAX_CM = 100           # visible radius on polar plot
-MAX_SAMPLES = 15              # store last N samples
-SAME_VALUE_TOLERANCE_CM = 4   # simple robust mean
-
-def deg_to_rad(deg: float) -> float:
-    return math.radians(deg)
-
-def robust_mean(values: List[float], tol_cm: float = SAME_VALUE_TOLERANCE_CM) -> Optional[float]:
-    if not values:
-        return None
-    clusters = []
-    for v in values:
-        c = [x for x in values if abs(x - v) <= tol_cm]
-        clusters.append(c)
-    best = max(clusters, key=lambda c: (len(c), -(max(c) - min(c))))
-    return round(sum(best) / len(best), 1)
 
 def _to_ascii_hex(data: bytes) -> bytes:
     """Return uppercase ASCII-HEX representation (no spaces)."""
@@ -349,9 +335,10 @@ Note: The MSP430 has limited flash memory. Large files may not fit.
         
         # Update status
         if self.lbl_status:
-            self.lbl_status.config(text="Execute mode - waiting for script commands...")
+            self.lbl_status.config(text="Execute mode - listening for telemetry commands...")
         
-        self._busy = False
+        # Don't set _busy = False here - keep listening for "2" command
+        # The busy state will be cleared when telemetry mode exits or execution completes
 
     # ----- Telemetry Sub-Mode Methods -----
     
@@ -383,11 +370,14 @@ Note: The MSP430 has limited flash memory. Large files may not fit.
         # Send '8' to controller to exit telemetry mode
         self.controller.send_command('8')
         
+        # Release busy state
+        self._busy = False
+        
         if self.lbl_status:
             self.lbl_status.config(text="Returned to Execute mode")
     
     def _handle_telemetry_line(self, line: str) -> None:
-        """Handle incoming telemetry data in format 'angle:micros'."""
+        """Handle incoming telemetry data in format 'angle:micros' (same logic as angle.py)."""
         try:
             a_s, us_s = line.split(":")
             angle = int(a_s)
@@ -398,26 +388,27 @@ Note: The MSP430 has limited flash memory. Large files may not fit.
         except ValueError:
             return
 
+        # Accept all angle data (unlike angle.py which filters by current_angle)
         self._current_angle = angle
         self._recent_cm.append(cm)
         if len(self._recent_cm) > MAX_SAMPLES:
             del self._recent_cm[:-MAX_SAMPLES]
     
     def _create_telemetry_ui(self) -> None:
-        """Create the telemetry mode UI similar to Mode 2."""
+        """Create the telemetry mode UI using the same design as Mode 2 (angle.py)."""
         import tkinter.ttk as ttk
         
         # Create telemetry frame that covers the main UI
         self.telemetry_frame = ttk.Frame(self.body, style="TFrame")
-        self.telemetry_frame.pack(fill="both", expand=True, padx=15, pady=15)
+        self.telemetry_frame.pack(fill="both", expand=True, padx=12, pady=12)
         
-        # Header
+        # Header section
         header = ttk.Frame(self.telemetry_frame, style="TFrame")
-        header.pack(fill="x", pady=(0, 10))
+        header.pack(fill="x", pady=(0, 12))
         
         ttk.Label(header, text="📡 Telemetry Mode (Script Execute)", 
                  style="Title.TLabel").pack(anchor="w")
-        ttk.Label(header, text="Receiving real-time angle and distance data from script execution", 
+        ttk.Label(header, text="Real-time angle and distance data from script execution", 
                  style="Sub.TLabel").pack(anchor="w", pady=(5, 0))
         
         # Exit button
@@ -427,48 +418,64 @@ Note: The MSP430 has limited flash memory. Large files may not fit.
                   command=self._exit_telemetry_mode, 
                   style="TButton").pack()
         
-        # Live readout
-        info = ttk.LabelFrame(self.telemetry_frame, text="📊 Live Data", padding=10)
-        info.pack(fill="x", pady=10)
+        # Live readout row (same style as angle.py)
+        info = ttk.Frame(self.telemetry_frame, style="TFrame")
+        info.pack(fill="x", padx=0, pady=(6, 12))
+
+        ttk.Label(info, text="Current Angle:", style="Sub.TLabel").pack(side="left")
+        self.lbl_angle_value = ttk.Label(info, text="—", style="TLabel")
+        self.lbl_angle_value.pack(side="left", padx=(4, 24))
+
+        ttk.Label(info, text="Distance:", style="Sub.TLabel").pack(side="left")
+        self.lbl_dist_value = ttk.Label(info, text="— cm", style="TLabel")
+        self.lbl_dist_value.pack(side="left", padx=(4, 24))
         
-        info_grid = ttk.Frame(info, style="TFrame")
-        info_grid.pack(fill="x")
-        
-        ttk.Label(info_grid, text="Current Angle:", style="Sub.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 10))
-        self.lbl_angle_value = ttk.Label(info_grid, text="—", style="TLabel")
-        self.lbl_angle_value.grid(row=0, column=1, sticky="w")
-        
-        ttk.Label(info_grid, text="Distance:", style="Sub.TLabel").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=(5, 0))
-        self.lbl_dist_value = ttk.Label(info_grid, text="— cm", style="TLabel")
-        self.lbl_dist_value.grid(row=1, column=1, sticky="w", pady=(5, 0))
-        
-        # Plot
-        self.figure = Figure(figsize=(8, 6), facecolor='white')
+        # Plot (same configuration as angle.py)
+        self.figure = Figure(figsize=(10, 7), facecolor='white')
         self.ax = self.figure.add_subplot(111, polar=True)
         self._configure_telemetry_axes()
         
         self.canvas = FigureCanvasTkAgg(self.figure, master=self.telemetry_frame)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, pady=10)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
         self.canvas.draw()
     
     def _configure_telemetry_axes(self) -> None:
-        """Configure the polar plot axes for telemetry display."""
+        """Configure the polar plot axes for telemetry display (reusing angle.py logic)."""
         if not self.ax:
             return
         self.ax.clear()
-        self.ax.set_ylim(0, PLOT_R_MAX_CM)
-        self.ax.set_theta_zero_location('N')
-        self.ax.set_theta_direction(-1)
-        self.ax.set_title("Real-time Distance Measurement", pad=20)
-        self.ax.set_rlabel_position(45)
+        self.ax.set_theta_zero_location("E")  # 0° at right
+        self.ax.set_theta_direction(1)        # clockwise
+        self.ax.set_thetamin(0)
+        self.ax.set_thetamax(MAX_ANGLE_DEG)
+        self.ax.set_rlim(0, PLOT_R_MAX_CM)
+        
+        # Add title and improve formatting
+        self.ax.set_title("Script Telemetry Mode\nDistance Measurement", pad=20, fontsize=14, fontweight='bold')
+        self.ax.set_ylabel("Distance (cm)", labelpad=30, fontsize=12)
         self.ax.grid(True, alpha=0.3)
+        
+        # Add degree markings
+        theta_ticks = range(0, 180, 30)
+        self.ax.set_thetagrids(theta_ticks, [f"{t}°" for t in theta_ticks])
+        
+        # Create legend (same as angle.py)
+        try:
+            from matplotlib.lines import Line2D
+            legend_elements = [
+                Line2D([0], [0], color='C0', linewidth=3, label='🎯 Servo Direction'),
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='C0', markersize=10, label='📏 Distance Point'),
+            ]
+            self.ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(0.02, 0.98), fontsize=10)
+        except ImportError:
+            pass  # Skip legend if matplotlib.lines not available
     
     def _render_telemetry(self) -> None:
-        """Update telemetry display with current data."""
+        """Update telemetry display with current data (same logic as angle.py)."""
         if not self._in_telemetry_mode:
             return
             
-        # Update labels
+        # Update labels (same style as angle.py)
         if self._current_angle is None:
             if self.lbl_angle_value:
                 self.lbl_angle_value.config(text="—")
@@ -481,19 +488,20 @@ Note: The MSP430 has limited flash memory. Large files may not fit.
             if self.lbl_dist_value:
                 self.lbl_dist_value.config(text=f"{cm:.1f} cm" if cm is not None else "— cm")
         
-        # Update plot
+        # Update plot (same logic as angle.py)
         if not (self.ax and self.canvas):
             return
         self._configure_telemetry_axes()
         
-        if self._current_angle is not None and self._recent_cm:
+        if self._current_angle is not None:
+            a = deg_to_rad(self._current_angle)
             cm = robust_mean(self._recent_cm)
-            if cm is not None and cm <= PLOT_R_MAX_CM:
-                theta = deg_to_rad(self._current_angle)
-                self.ax.plot([theta, theta], [0, cm], 'b-', linewidth=3, alpha=0.8)
-                self.ax.scatter([theta], [cm], c='red', s=50, zorder=5)
+            r = PLOT_R_MAX_CM if cm is None else min(cm, PLOT_R_MAX_CM)
+            self.ax.plot([a, a], [0, r], linewidth=2)
+            if cm is not None:
+                self.ax.scatter([a], [cm], s=30)
         
-        self.canvas.draw()
+        self.canvas.draw_idle()
     
     def _hide_main_ui(self) -> None:
         """Hide the main flash UI elements."""

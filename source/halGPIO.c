@@ -10,7 +10,7 @@
 char deg_array[5];
 char j=0;
 char change_deg = 0;
-char exit_flag = 0;
+char exit_flag  = 0;
 volatile int temp[2];
 
 // Flash reading state variables
@@ -248,13 +248,13 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
             case Flash_Reading:
                 // Placeholder: upon newline, return to selector
                 if (DataFromPC[j-1] == RX_EOF_CHAR) { flash_state = Flash_SelectOp; j = 0; }
-                if (DataFromPC[0] == '8') { flash_state = Flash_SelectOp; j = 0; Main = detecor_sel;}
+                if (DataFromPC[0] == '8') { flash_state = Flash_SelectOp; j = 0; Main = Flash;}
                 break;
 
             case Flash_Executing:
                 // Placeholder: upon newline, return to selector
                 if (DataFromPC[j-1] == RX_EOF_CHAR) { flash_state = Flash_SelectOp; j = 0; }
-                if (DataFromPC[0] == '8') {exit_flag = 1;}
+                if (DataFromPC[0] == '8') { flash_state = Flash_SelectOp; j = 0; Main = Flash;}
                 break;
 
             case Flash_Writing:
@@ -340,7 +340,7 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
                                 }
                                 flash_state = Flash_SelectOp;
                                 write_stage = Write_WaitName;
-                                Main = detecor_sel;
+                                Main = Flash;
                                 j = 0;
                             }
                             break;
@@ -426,6 +426,7 @@ void telemeter_deg_update(void)
     deg_duty_cycle = 600 + deg * 10;
     TACCR1 = deg_duty_cycle;
     change_deg = 0;
+    exit_flag = 0;
 }
 
 void init_trigger_gpio(void)

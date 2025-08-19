@@ -386,11 +386,11 @@ static void RunScript(void) {
                 flash_argument[0] = *script_pointers++;
                 flash_argument[1] = *script_pointers++;
                 y += 2;
-                //X = hex2int(flash_argument);
-                strcpy(deg_array, flash_argument);
-                ser_output("2");
+                X = hex2int(flash_argument);
+                ltoa(X, deg_array);
+                IE2 |= UCA0TXIFG;
+                ser_output("2"); ser_output(newline);
                 Telemeter();
-                exit_flag = 0;
                 break;
 
             case '7':  // servo_scan
@@ -422,7 +422,7 @@ void ExecuteScript(void) {
     if (execute_stage == Execute_Running) {
         RunScript();  // Execute the selected script
         state = state8;  // Return to sleep state after execution
-        Main = detecor_sel;
+        Main = Flash;
         flash_state = Flash_SelectOp;
     }    
 }
