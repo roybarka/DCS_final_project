@@ -82,14 +82,13 @@ void Objects_Detector(void) {
             deg = 600 + (10 * iter);
             TACCR1 = deg;
             TACTL = TASSEL_2 | MC_1;
-            __delay_cycles(8000);
-            //TACTL = TASSEL_2 | MC_0;
+            __delay_cycles(10000);
             for (iter_meas = 0; iter_meas < 10; iter_meas++) {
                 IE2 &= UCA0RXIE;
                 dist = send_trigger_pulse();
                 send_meas(dist,iter);
                 IE2 |= UCA0RXIE;
-                __delay_cycles(5000);
+                __delay_cycles(10000);
             }
         }
     }

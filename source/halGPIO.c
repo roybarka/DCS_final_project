@@ -34,50 +34,49 @@ char file_content[RX_BUF_SIZE];
 
 // =================== INTERRUPT SERVICE ROUTINES ===================
 
-// TIMER A1 ISR (Echo capture)
+// TIMER1_A1_VECTOR - Only handles timer overflow for timeout detection
 #pragma vector = TIMER1_A1_VECTOR
 __interrupt void TIMER1_A1_ISR(void)
 {
-    switch (__even_in_range(TA1IV, TA1IV_TAIFG)) {
-    case TA1IV_NONE: break;
-    case TA1IV_TACCR1:
-
-        if (cap_count == 0) {
-            t_rise = TA1CCR1;
-            cap_count = 1;
-            __bic_SR_register_on_exit(LPM0_bits); // wake so you can see cap_count==1
-        } else {
-            t_fall = TA1CCR1;
-            if (t_fall >= t_rise) diff_ticks = t_fall - t_rise;
-            else                  diff_ticks = (unsigned)(t_fall + 65536u - t_rise);
-            measure_done = 1;
-            __bic_SR_register_on_exit(LPM0_bits); // wake main for the print
-        }
-
-        break;
-    case TA1IV_TACCR2:  break;
-    case TA1IV_TAIFG:  // Overflow timeout (~65 ms @ 1 MHz)
+    // Get the interrupt vector value
+    unsigned int iv = TA1IV;
+    
+    // Check for timer overflow (TAIFG)
+    if (iv == TA1IV_TAIFG) {
+        // Overflow timeout occurred (~65 ms @ 1 MHz) - No echo detected
         diff_ticks   = 0;
-        measure_done = 2;                    // mark timeout
+        measure_done = 2;  // mark as timeout
+        
+        // Clear the overflow flag (though reading TA1IV should have cleared it)
+        TA1CTL &= ~TAIFG;
+        
+        // Exit low power mode
         __bic_SR_register_on_exit(LPM0_bits);
-        break;
     }
 }
 
-// TIMER A1 ISR (Echo capture) -for P2.0
+// TIMER1_A0_VECTOR - Only handles capturing edges on TA1CCR0 (P2.0)
 #pragma vector = TIMER1_A0_VECTOR
 __interrupt void TIMER1_A0_ISR(void)
 {
     if (cap_count == 0) {
+        // First edge (rising edge) detected
         t_rise = TA1CCR0;               // read CCR0
         cap_count = 1;
-        __bic_SR_register_on_exit(LPM0_bits);
+        __bic_SR_register_on_exit(LPM0_bits); // Exit low power mode
     } else {
+        // Second edge (falling edge) detected
         t_fall = TA1CCR0;               // read CCR0
-        if (t_fall >= t_rise) diff_ticks = t_fall - t_rise;
-        else                  diff_ticks = (unsigned)(t_fall + 65536u - t_rise);
-        measure_done = 1;
-        __bic_SR_register_on_exit(LPM0_bits);
+        
+        // Calculate time difference with overflow handling
+        if (t_fall >= t_rise) {
+            diff_ticks = t_fall - t_rise;
+        } else {
+            diff_ticks = (unsigned)(t_fall + 65536u - t_rise);
+        }
+        
+        measure_done = 1;  // Mark measurement as complete
+        __bic_SR_register_on_exit(LPM0_bits); // Exit low power mode
     }
 }
 
@@ -439,10 +438,26 @@ void init_trigger_gpio(void)
 
 void init_echo_capture(void)
 {
+    // Configure P2.0 as Timer1_A0 capture input
     P2SEL |= BIT0;          // use P2.0 as TA1.0 CCI0A
     P2DIR &= ~BIT0;         // input
-    TA1CTL   = TASSEL_2 | MC_2;                 // SMCLK, continuous, overflow IRQ
-    TA1CCTL0 = CM_3 | CCIS_0 | SCS | CAP | CCIE;       // both edges on CCI0A, sync, capture, IRQ
+    
+    // First stop the timer and clear all settings
+    TA1CTL = TACLR;         // Clear timer
+    
+    // Configure TA1CCR0 for edge capture before enabling the timer
+    TA1CCTL0 = CM_3 | CCIS_0 | SCS | CAP | CCIE;  // Both edges, CCIxA, sync, capture mode, enable interrupt
+    
+    // Make sure CCR1 and CCR2 interrupts are disabled (we're only using CCR0)
+    TA1CCTL1 = 0;
+    TA1CCTL2 = 0;
+    
+    // Clear any pending flags
+    TA1CTL &= ~TAIFG;       // Clear timer overflow flag
+    TA1CCTL0 &= ~CCIFG;     // Clear capture/compare flag
+    
+    // Finally, start the timer with overflow interrupt enabled
+    TA1CTL = TASSEL_2 | MC_2 | TAIE;  // SMCLK, continuous mode, enable overflow interrupt
 }
 
 void ADCconfig(void)
@@ -458,19 +473,37 @@ void ADCconfig(void)
 
 unsigned int send_trigger_pulse(void)
 {
-    cap_count    = 0;
-    measure_done = 0;
-    TA1CCTL0 &= ~(CCIFG | COV);   // <-- CCR0 instead of CCR1
-    TA1CTL   |= TACLR;
-    P1OUT |=  BIT7;
-    __delay_cycles(200);
-    P1OUT &= ~BIT7;
-    TA1CTL |= TAIE; // enable overflow iterupts (for if echo didnt reurn twice)
-    while (!measure_done) {
-        __bis_SR_register(LPM0_bits | GIE);
+    // Reset state variables for new measurement
+    cap_count    = 0;     // No edges detected yet
+    measure_done = 0;     // Measurement not complete
+    
+    // Clear any pending interrupt flags and timer
+    TA1CCTL0 &= ~(CCIFG | COV);   // Clear CCR0 interrupt flag and overflow flag
+    TA1CTL   &= ~TAIFG;           // Clear timer overflow flag
+    TA1CTL   |= TACLR | TAIE;     // Clear timer counter and ENABLE overflow interrupt
+    
+    // Send the trigger pulse (10μs minimum according to HC-SR04 datasheet)
+    P1OUT |=  BIT7;               // Set trigger pin high
+    __delay_cycles(200);          // Hold for ~10μs (at ~20MHz this is ~200 cycles)
+    P1OUT &= ~BIT7;               // Set trigger pin low
+    
+    // Wait for measurement to complete or timeout (with max safety timeout)
+    unsigned int safety_counter = 0;
+    while (!measure_done && safety_counter < 50000) { // Added safety timeout
+        __bis_SR_register(LPM0_bits | GIE);  // Enter low power mode with interrupts enabled
+        safety_counter++;  // Increment safety counter
     }
-    TA1CTL   &= ~TAIE; // disable overflow iterupts (for if echo didnt reurn twice)
-    return diff_ticks;
+    
+    // If we reached the safety counter limit, set measure_done to timeout
+    if (safety_counter >= 50000) {
+        measure_done = 2;  // Indicate timeout
+        diff_ticks = 0;
+    }
+    
+    // Disable the overflow interrupt when done
+    TA1CTL &= ~TAIE;
+    
+    return diff_ticks;  // Return the measured time difference (or 0 for timeout)
 }
 
 unsigned int LDRmeas(void){
