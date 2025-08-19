@@ -4,22 +4,17 @@ import io
 import os
 import time
 from typing import Optional, List
-import math
 
 import tkinter as tk
 from tkinter import filedialog, messagebox
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.figure import Figure
 
 from msp_gui.modes.base import ModeBase
 from msp_gui.msp_controller import MSPController
-from msp_gui.translators.script_encoder import encode_script_text  # NEW
+from msp_gui.translators.script_encoder import encode_script_text
 
-# Import telemetry utilities from angle.py
-from msp_gui.modes.angle import (
-    MAX_ANGLE_DEG, US_TO_CM, PLOT_R_MAX_CM, MAX_SAMPLES, SAME_VALUE_TOLERANCE_CM,
-    deg_to_rad, robust_mean
-)
+# Import Mode1View and Mode2View for GUI integration
+from msp_gui.modes.sonar import Mode1View
+from msp_gui.modes.angle import Mode2View
 
 
 # ---- Protocol constants (keep EOF sentinel) ----
@@ -89,19 +84,6 @@ class Mode5FlashView(ModeBase):
         self.lbl_type: Optional[tk.Label] = None
         self.lbl_size: Optional[tk.Label] = None
         self._busy = False  # simple guard to avoid double-sends
-        
-        # Telemetry sub-mode state
-        self._in_telemetry_mode = False
-        self._current_angle: Optional[int] = None
-        self._recent_cm: List[float] = []
-        
-        # Telemetry UI elements
-        self.telemetry_frame: Optional[tk.Frame] = None
-        self.lbl_angle_value: Optional[tk.Label] = None
-        self.lbl_dist_value: Optional[tk.Label] = None
-        self.figure: Optional[Figure] = None
-        self.ax = None
-        self.canvas: Optional[FigureCanvasTkAgg] = None
 
     # ----- Lifecycle -----
 
@@ -186,29 +168,35 @@ Note: The MSP430 has limited flash memory. Large files may not fit.
 
     def on_stop(self) -> None:
         self._busy = False  # allow next entry to write
-        
-        # Clean up telemetry mode if active
-        if self._in_telemetry_mode:
-            self._cleanup_telemetry_ui()
-            self._in_telemetry_mode = False
-            self._recent_cm.clear()
-            self._current_angle = None
 
     def handle_line(self, line: str) -> None:
-        # Check if we're receiving "2" to enter telemetry sub-mode
-        if line.strip() == "2" and not self._in_telemetry_mode:
-            self._enter_telemetry_mode()
+        # Add debugging to see what we're receiving
+        print(f"Flash mode received line: '{line}' (stripped: '{line.strip()}')")
+        
+        # Check if we're receiving "1" to open sonar mode
+        if line.strip() == "1":
+            print("Received '1' - opening sonar mode!")
+            self._open_sonar_mode()
+            return
+        
+        # Check if we're receiving "2" to open angle/telemetry mode
+        if line.strip() == "2":
+            print("Received '2' - opening angle mode!")
+            self._open_angle_mode()
+            return
+        
+        # Check if we're receiving "8" to close current mode and return to flash
+        if line.strip() == "8":
+            print("Received '8' - closing current mode and returning to flash!")
+            self._close_current_mode()
             return
             
-        # If in telemetry mode, handle angle:distance data
-        if self._in_telemetry_mode:
-            self._handle_telemetry_line(line)
-        # Flash mode doesn't stream continuous data for 'write'; ignore for now
+        # Flash mode doesn't stream continuous data for 'write'; ignore other lines
+        print(f"Flash mode ignoring line: {line}")
 
     def render(self) -> None:
-        if self._in_telemetry_mode:
-            self._render_telemetry()
-        # Otherwise, no continuous rendering needed for flash mode
+        # No continuous rendering needed for flash mode
+        pass
 
     # ----- Actions -----
 
@@ -327,8 +315,10 @@ Note: The MSP430 has limited flash memory. Large files may not fit.
 
     def _do_execute(self) -> None:
         if self._busy:
+            print("Execute button pressed but already busy")
             return
         self._busy = True
+        print("Execute mode started - sending 'e' command")
 
         # 1) Tell controller: we choose Execute
         self.controller.send_command('e')
@@ -337,193 +327,127 @@ Note: The MSP430 has limited flash memory. Large files may not fit.
         if self.lbl_status:
             self.lbl_status.config(text="Execute mode - listening for telemetry commands...")
         
-        # Don't set _busy = False here - keep listening for "2" command
-        # The busy state will be cleared when telemetry mode exits or execution completes
+        print("Execute mode listening for '2' command...")
+        # Don't set _busy = False here - keep listening for commands
+        # The busy state will be cleared when execution completes
 
-    # ----- Telemetry Sub-Mode Methods -----
+    # ----- Mode Integration -----
     
-    def _enter_telemetry_mode(self) -> None:
-        """Enter telemetry sub-mode when '2' is received during execute mode."""
-        self._in_telemetry_mode = True
-        self._recent_cm.clear()
-        self._current_angle = None
+    def _open_sonar_mode(self) -> None:
+        """Open the sonar mode (Mode 1) when '1' is received during script execution."""
+        print("_open_sonar_mode called!")
         
-        # Hide the main flash UI and show telemetry UI
-        self._hide_main_ui()
-        self._create_telemetry_ui()
+        # Get reference to the main app window
+        app = self.master
+        while app and not hasattr(app, 'navigate_to_menu'):
+            app = app.master
         
-        if self.lbl_status:
-            self.lbl_status.config(text="Telemetry Mode - receiving angle:distance data")
-    
-    def _exit_telemetry_mode(self) -> None:
-        """Exit telemetry sub-mode and return to execute mode."""
-        self._in_telemetry_mode = False
-        self._recent_cm.clear()
-        self._current_angle = None
-        
-        # Clean up telemetry UI
-        self._cleanup_telemetry_ui()
-        
-        # Restore main UI
-        self._show_main_ui()
-        
-        # Send '8' to controller to exit telemetry mode
-        self.controller.send_command('8')
-        
-        # Release busy state
-        self._busy = False
-        
-        if self.lbl_status:
-            self.lbl_status.config(text="Returned to Execute mode")
-    
-    def _handle_telemetry_line(self, line: str) -> None:
-        """Handle incoming telemetry data in format 'angle:micros' (same logic as angle.py)."""
-        try:
-            a_s, us_s = line.split(":")
-            angle = int(a_s)
-            micros = int(us_s)
-            cm = micros * US_TO_CM
-            if cm <= 0:
-                return
-        except ValueError:
-            return
-
-        # Accept all angle data (unlike angle.py which filters by current_angle)
-        self._current_angle = angle
-        self._recent_cm.append(cm)
-        if len(self._recent_cm) > MAX_SAMPLES:
-            del self._recent_cm[:-MAX_SAMPLES]
-    
-    def _create_telemetry_ui(self) -> None:
-        """Create the telemetry mode UI using the same design as Mode 2 (angle.py)."""
-        import tkinter.ttk as ttk
-        
-        # Create telemetry frame that covers the main UI
-        self.telemetry_frame = ttk.Frame(self.body, style="TFrame")
-        self.telemetry_frame.pack(fill="both", expand=True, padx=12, pady=12)
-        
-        # Header section
-        header = ttk.Frame(self.telemetry_frame, style="TFrame")
-        header.pack(fill="x", pady=(0, 12))
-        
-        ttk.Label(header, text="📡 Telemetry Mode (Script Execute)", 
-                 style="Title.TLabel").pack(anchor="w")
-        ttk.Label(header, text="Real-time angle and distance data from script execution", 
-                 style="Sub.TLabel").pack(anchor="w", pady=(5, 0))
-        
-        # Exit button
-        exit_frame = ttk.Frame(header, style="TFrame")
-        exit_frame.pack(anchor="e", pady=(10, 0))
-        ttk.Button(exit_frame, text="🚪 Exit Telemetry Mode", 
-                  command=self._exit_telemetry_mode, 
-                  style="TButton").pack()
-        
-        # Live readout row (same style as angle.py)
-        info = ttk.Frame(self.telemetry_frame, style="TFrame")
-        info.pack(fill="x", padx=0, pady=(6, 12))
-
-        ttk.Label(info, text="Current Angle:", style="Sub.TLabel").pack(side="left")
-        self.lbl_angle_value = ttk.Label(info, text="—", style="TLabel")
-        self.lbl_angle_value.pack(side="left", padx=(4, 24))
-
-        ttk.Label(info, text="Distance:", style="Sub.TLabel").pack(side="left")
-        self.lbl_dist_value = ttk.Label(info, text="— cm", style="TLabel")
-        self.lbl_dist_value.pack(side="left", padx=(4, 24))
-        
-        # Plot (same configuration as angle.py)
-        self.figure = Figure(figsize=(10, 7), facecolor='white')
-        self.ax = self.figure.add_subplot(111, polar=True)
-        self._configure_telemetry_axes()
-        
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self.telemetry_frame)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
-        self.canvas.draw()
-    
-    def _configure_telemetry_axes(self) -> None:
-        """Configure the polar plot axes for telemetry display (reusing angle.py logic)."""
-        if not self.ax:
-            return
-        self.ax.clear()
-        self.ax.set_theta_zero_location("E")  # 0° at right
-        self.ax.set_theta_direction(1)        # clockwise
-        self.ax.set_thetamin(0)
-        self.ax.set_thetamax(MAX_ANGLE_DEG)
-        self.ax.set_rlim(0, PLOT_R_MAX_CM)
-        
-        # Add title and improve formatting
-        self.ax.set_title("Script Telemetry Mode\nDistance Measurement", pad=20, fontsize=14, fontweight='bold')
-        self.ax.set_ylabel("Distance (cm)", labelpad=30, fontsize=12)
-        self.ax.grid(True, alpha=0.3)
-        
-        # Add degree markings
-        theta_ticks = range(0, 180, 30)
-        self.ax.set_thetagrids(theta_ticks, [f"{t}°" for t in theta_ticks])
-        
-        # Create legend (same as angle.py)
-        try:
-            from matplotlib.lines import Line2D
-            legend_elements = [
-                Line2D([0], [0], color='C0', linewidth=3, label='🎯 Servo Direction'),
-                Line2D([0], [0], marker='o', color='w', markerfacecolor='C0', markersize=10, label='📏 Distance Point'),
-            ]
-            self.ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(0.02, 0.98), fontsize=10)
-        except ImportError:
-            pass  # Skip legend if matplotlib.lines not available
-    
-    def _render_telemetry(self) -> None:
-        """Update telemetry display with current data (same logic as angle.py)."""
-        if not self._in_telemetry_mode:
-            return
-            
-        # Update labels (same style as angle.py)
-        if self._current_angle is None:
-            if self.lbl_angle_value:
-                self.lbl_angle_value.config(text="—")
-            if self.lbl_dist_value:
-                self.lbl_dist_value.config(text="— cm")
+        if app and hasattr(app, 'navigate_to_menu'):
+            print("Found main app, creating and mounting Mode 1 (Sonar)...")
+            try:
+                # Create a new sonar mode view
+                sonar_view = Mode1View(app, self.controller)
+                sonar_view.set_back_callback(app.navigate_to_menu)
+                
+                # Store reference to current flash view for returning later
+                if hasattr(app, '_active_view'):
+                    app._previous_flash_view = app._active_view
+                
+                # Mount the sonar view using the app's _mount_view method
+                if hasattr(app, '_mount_view'):
+                    app._mount_view(sonar_view)
+                    sonar_view.start()
+                    print("Successfully opened sonar mode!")
+                else:
+                    print("App doesn't have _mount_view method")
+                    if self.lbl_status:
+                        self.lbl_status.config(text="Error: Cannot switch to sonar mode")
+                        
+            except Exception as e:
+                print(f"Error opening sonar mode: {e}")
+                if self.lbl_status:
+                    self.lbl_status.config(text=f"Error opening sonar mode: {e}")
         else:
-            if self.lbl_angle_value:
-                self.lbl_angle_value.config(text=f"{self._current_angle}°")
-            cm = robust_mean(self._recent_cm)
-            if self.lbl_dist_value:
-                self.lbl_dist_value.config(text=f"{cm:.1f} cm" if cm is not None else "— cm")
+            print("Could not find main app reference to open sonar mode")
+            # Fallback: show a message to user
+            if self.lbl_status:
+                self.lbl_status.config(text="Script requesting sonar mode - please manually open Mode 1")
+
+    def _open_angle_mode(self) -> None:
+        """Open the angle/telemetry mode (Mode 2) when '2' is received during script execution."""
+        print("_open_angle_mode called!")
         
-        # Update plot (same logic as angle.py)
-        if not (self.ax and self.canvas):
-            return
-        self._configure_telemetry_axes()
+        # Get reference to the main app window
+        app = self.master
+        while app and not hasattr(app, 'navigate_to_menu'):
+            app = app.master
         
-        if self._current_angle is not None:
-            a = deg_to_rad(self._current_angle)
-            cm = robust_mean(self._recent_cm)
-            r = PLOT_R_MAX_CM if cm is None else min(cm, PLOT_R_MAX_CM)
-            self.ax.plot([a, a], [0, r], linewidth=2)
-            if cm is not None:
-                self.ax.scatter([a], [cm], s=30)
+        if app and hasattr(app, 'navigate_to_menu'):
+            print("Found main app, creating and mounting Mode 2 (Angle)...")
+            try:
+                # Create a new angle mode view
+                angle_view = Mode2View(app, self.controller)
+                angle_view.set_back_callback(app.navigate_to_menu)
+                
+                # Store reference to current flash view for returning later
+                if hasattr(app, '_active_view'):
+                    app._previous_flash_view = app._active_view
+                
+                # Mount the angle view using the app's _mount_view method
+                if hasattr(app, '_mount_view'):
+                    app._mount_view(angle_view)
+                    angle_view.start()
+                    print("Successfully opened angle mode!")
+                else:
+                    print("App doesn't have _mount_view method")
+                    if self.lbl_status:
+                        self.lbl_status.config(text="Error: Cannot switch to angle mode")
+                        
+            except Exception as e:
+                print(f"Error opening angle mode: {e}")
+                if self.lbl_status:
+                    self.lbl_status.config(text=f"Error opening angle mode: {e}")
+        else:
+            print("Could not find main app reference to open angle mode")
+            # Fallback: show a message to user
+            if self.lbl_status:
+                self.lbl_status.config(text="Script requesting angle mode - please manually open Mode 2")
+
+    def _close_current_mode(self) -> None:
+        """Close current mode (sonar/angle) and return to flash mode when '8' is received."""
+        print("_close_current_mode called!")
         
-        self.canvas.draw_idle()
-    
-    def _hide_main_ui(self) -> None:
-        """Hide the main flash UI elements."""
-        for widget in self.body.winfo_children():
-            if widget != self.telemetry_frame:
-                widget.pack_forget()
-    
-    def _show_main_ui(self) -> None:
-        """Restore the main flash UI elements."""
-        # This will be called when exiting telemetry mode
-        # We need to recreate the main UI since we packed_forget everything
-        self.on_start()
-    
-    def _cleanup_telemetry_ui(self) -> None:
-        """Clean up telemetry UI elements."""
-        if self.telemetry_frame:
-            self.telemetry_frame.destroy()
-            self.telemetry_frame = None
-        if self.canvas:
-            self.canvas.get_tk_widget().destroy()
-        self.figure = None
-        self.ax = None
-        self.canvas = None
-        self.lbl_angle_value = None
-        self.lbl_dist_value = None
+        # Get reference to the main app window
+        app = self.master
+        while app and not hasattr(app, 'navigate_to_menu'):
+            app = app.master
+        
+        if app and hasattr(app, '_mount_view'):
+            print("Found main app, returning to flash mode...")
+            try:
+                # Check if we stored a previous flash view
+                if hasattr(app, '_previous_flash_view') and app._previous_flash_view:
+                    print("Restoring previous flash view...")
+                    # Restore the previous flash view
+                    flash_view = app._previous_flash_view
+                    app._mount_view(flash_view)
+                    # Clear the stored reference
+                    app._previous_flash_view = None
+                else:
+                    print("Creating new flash view...")
+                    # Create a new flash view if no previous one stored
+                    flash_view = self.__class__(app, self.controller)
+                    flash_view.set_back_callback(app.navigate_to_menu)
+                    app._mount_view(flash_view)
+                    flash_view.start()
+                
+                print("Successfully returned to flash mode!")
+                
+            except Exception as e:
+                print(f"Error returning to flash mode: {e}")
+                # Fallback to menu
+                app.navigate_to_menu()
+        else:
+            print("Could not find main app reference, returning to menu")
+            if app and hasattr(app, 'navigate_to_menu'):
+                app.navigate_to_menu()

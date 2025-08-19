@@ -82,14 +82,14 @@ void Objects_Detector(void) {
             deg = 600 + (10 * iter);
             TACCR1 = deg;
             TACTL = TASSEL_2 | MC_1;
-            __delay_cycles(25000);
-            TACTL = TASSEL_2 | MC_0;
+            __delay_cycles(8000);
+            //TACTL = TASSEL_2 | MC_0;
             for (iter_meas = 0; iter_meas < 10; iter_meas++) {
                 IE2 &= UCA0RXIE;
                 dist = send_trigger_pulse();
                 send_meas(dist,iter);
                 IE2 |= UCA0RXIE;
-                __delay_cycles(13000);
+                __delay_cycles(5000);
             }
         }
     }
@@ -165,6 +165,36 @@ void Object_and_Light_Detector(void) {
                 send_two_meas(iter, ldr_val, dist); // prints angle:dist:ldr
                 __delay_cycles(3000);
             }
+        }
+    }
+}
+
+// Servo Scan Function (based on Objects_Detector)
+void Servo_Scan(unsigned int start_angle, unsigned int stop_angle) {
+    init_trigger_gpio();
+    init_echo_capture();
+    __bis_SR_register(GIE);
+    
+    int iter, iter_meas, dist;
+    deg = 600 + (10 * start_angle);  // Convert start angle to servo pulse width
+    TACCR1 = deg;
+    TACCTL1 = OUTMOD_7;
+    TACTL = TASSEL_2 | MC_1;
+    TA1CTL = TASSEL_2 | MC_2;
+    __delay_cycles(300000);
+    
+    // Single scan from start to stop angle (no while loop)
+    for (iter = start_angle; iter <= stop_angle; iter++) {
+        deg = 600 + (10 * iter);
+        TACCR1 = deg;
+        TACTL = TASSEL_2 | MC_1;
+        __delay_cycles(8000);
+        for (iter_meas = 0; iter_meas < 10; iter_meas++) {
+            IE2 &= UCA0RXIE;
+            dist = send_trigger_pulse();
+            send_meas(dist, iter);
+            IE2 |= UCA0RXIE;
+            __delay_cycles(5000);
         }
     }
 }
@@ -408,7 +438,17 @@ static void RunScript(void) {
                 y += 2;
                 start = hex2int(flash_argument);
                 stop = hex2int(flash_argument2);
-                // TODO: Implement scan between angles
+                
+                // Send '1' to PC to signal sonar GUI should open
+                ser_output("1");
+                ser_output(newline);
+                
+                // Call servo scan function
+                Servo_Scan(start, stop);
+                
+                // Send '8' to PC to signal scan is finished - close sonar GUI
+                ser_output("8");
+                ser_output(newline);
                 break;
 
             case '8':  // sleep
