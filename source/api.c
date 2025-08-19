@@ -137,21 +137,27 @@ void Object_and_Light_Detector(void) {
     init_echo_capture();
     __bis_SR_register(GIE);
     while(state==state4){
-        int iter;
-        unsigned int avg_meas;
+        int iter, sample;
+        unsigned int ldr_val;
+        unsigned int dist;
         deg = 600;
         TACCR1 = deg;
         TACCTL1 = OUTMOD_7;
         TACTL = TASSEL_2 | MC_1;
-        __delay_cycles(100000);
+        __delay_cycles(300000);
         for (iter = 0; iter < 180 && state==state4; iter++) {
-            deg += 10;
+            deg = 600 + (10 * iter);
             TACCR1 = deg;
-            __delay_cycles(100000);
-            avg_meas = LDRmeas();
-            unsigned int dist = send_trigger_pulse();
-            send_two_meas(iter,avg_meas, dist);
-            __delay_cycles(50000);
+            __delay_cycles(5000); // allow servo to settle
+            // Send multiple paired samples per angle: angle:dist:ldr
+            for (sample = 0; sample < 7; sample++) {
+                IE2 &= UCA0RXIE;               // pause UART RX IRQ while timing echo
+                dist = send_trigger_pulse();   // sonar echo time (us)
+                IE2 |= UCA0RXIE;
+                ldr_val = LDRmeas();           // raw LDR value
+                send_two_meas(iter, ldr_val, dist); // prints angle:dist:ldr
+                __delay_cycles(3000);
+            }
         }
     }
 }
