@@ -156,3 +156,43 @@ void save_LDR(unsigned int measurement, unsigned int counter) {
     FCTL1 = FWKEY;         // Clear WRT bit
     FCTL3 = FWKEY + LOCK;  // Set LOCK bit
 }
+
+void upload_files_from_flash(void) {
+    // Read Files struct from flash
+    Files* flash_files = (Files*)FILES_STRUCT_FLASH_ADDR;
+    
+    // Check if flash contains valid data (simple validation)
+    if (flash_files->num_of_files <= 10 && flash_files->num_of_files >= 0) {
+        // Copy from flash to RAM
+        memcpy(&file, flash_files, sizeof(Files));
+    } else {
+        // Initialize empty file structure
+        memset(&file, 0, sizeof(Files));
+        file.num_of_files = 0;
+    }
+}
+
+void download_files_to_flash(void) {
+    char* dst;
+    char* src;
+    int i;
+    
+    // Erase the flash segment
+    FCTL1 = FWKEY + ERASE;
+    FCTL3 = FWKEY;
+    *(char*)FILES_STRUCT_FLASH_ADDR = 0;  // Dummy write to erase
+    
+    // Write Files struct to flash
+    FCTL1 = FWKEY + WRT;
+    FCTL3 = FWKEY;
+    
+    src = (char*)&file;
+    dst = (char*)FILES_STRUCT_FLASH_ADDR;
+    
+    for (i = 0; i < sizeof(Files); i++) {
+        *dst++ = *src++;
+    }
+    
+    FCTL1 = FWKEY;
+    FCTL3 = FWKEY + LOCK;
+}

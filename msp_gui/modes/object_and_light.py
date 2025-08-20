@@ -136,6 +136,11 @@ class Mode4ObjectAndLightDetectorView(ModeBase):
         self._batch = CombinedBatch()
         self._calib_lines = 0
         self._status_var.set("Awaiting calibration...")
+        
+        # Send acknowledgment to indicate we're ready to receive data
+        # This confirms that the mode has opened successfully
+        self.controller.send_ack()
+        logger.info("Mode 4 opened successfully, sent ack to controller")
 
     def on_stop(self) -> None:
         if self.canvas:
@@ -151,6 +156,10 @@ class Mode4ObjectAndLightDetectorView(ModeBase):
         self._ldr_sat = [False] * MAX_ANGLE_DEG
         self._batch = CombinedBatch()
         self._status_var.set("Awaiting calibration...")
+        
+        # Send 8 to controller to indicate mode is closed and ready for new exe command
+        self.controller.send_command('8')
+        logger.info("Mode 4 closed, sent '8' to controller - ready for new exe command")
 
     def handle_line(self, line: str) -> None:
         # Calibration: 10 lines 'idx:value'
@@ -320,11 +329,11 @@ class Mode4ObjectAndLightDetectorView(ModeBase):
         from matplotlib.lines import Line2D
         from matplotlib.patches import Patch
         legend_elements = [
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='lime', markersize=8, label='🔍 Sonar Points'),
-            Line2D([0], [0], color='red', linewidth=3, label='🎯 Objects (Sonar)'),
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='blue', markersize=8, label='💡 Light Detection'),
-            Line2D([0], [0], marker='*', color='w', markerfacecolor='yellow', markersize=12, label='🌟 Light Sources'),
-            Patch(facecolor='white', edgecolor='blue', alpha=0.6, label='📊 Object Info')
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='lime', markersize=8, label='* Sonar Points'),
+            Line2D([0], [0], color='red', linewidth=3, label='-> Objects (Sonar)'),
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='blue', markersize=8, label='+ Light Detection'),
+            Line2D([0], [0], marker='*', color='w', markerfacecolor='yellow', markersize=12, label='* Light Sources'),
+            Patch(facecolor='white', edgecolor='blue', alpha=0.6, label='[i] Object Info')
         ]
         self.ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(0.02, 0.98), fontsize=9)
 

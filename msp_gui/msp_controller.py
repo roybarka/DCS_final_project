@@ -48,6 +48,16 @@ class MSPController:
         except Exception as e:
             logger.warning("Serial write error: %s", e)
 
+    def send_ack(self) -> None:
+        """
+        Send an acknowledgment to the device. Used to confirm readiness to receive data.
+        """
+        try:
+            self.ser.write(b"ack\n")
+            logger.debug("Sent acknowledgment")
+        except Exception as e:
+            logger.warning("Serial write error sending ack: %s", e)
+
     def close(self) -> None:
         try:
             self.ser.close()
@@ -60,6 +70,16 @@ class MSPController:
         try:
             # reset_input_buffer is non-blocking and clears OS buffers too
             self.ser.reset_input_buffer()
+            # Small delay to allow any in-flight data to arrive and be discarded
+            time.sleep(0.05)
+            # Read and discard any remaining data
+            start_time = time.time()
+            while time.time() - start_time < 0.1:  # 100ms max
+                if self.ser.in_waiting > 0:
+                    self.ser.read(self.ser.in_waiting)
+                else:
+                    break
+                time.sleep(0.01)
             logger.debug("Serial input buffer flushed")
         except Exception as e:
             logger.warning("Serial flush error: %s", e)

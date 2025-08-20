@@ -97,6 +97,10 @@ class Mode3LightDetectorView(ModeBase):
         self.figure = None
         self.ax = None
         self.canvas = None
+        
+        # Send exit command
+        if self.exit_command:
+            self.controller.send_command(self.exit_command)
 
     def handle_line(self, line: str) -> None:
         # Calibration phase: expect 10 lines of the form 'idx:value'

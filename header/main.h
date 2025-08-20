@@ -12,7 +12,7 @@ enum main_states{detecor_sel, Tele_get_deg, Flash};
 enum flash_states{Flash_SelectOp, Flash_Reading, Flash_Executing, Flash_Writing};
 
 // Writing sub-stages
-enum write_stages{Write_WaitName, Write_WaitType, Write_WaitSize, Write_WaitContent};
+enum write_stages{Write_WaitName, Write_WaitType, Write_WaitSize, Write_WaitContent, Write_Complete};
 
 // Reading sub-stages
 enum read_stages{Read_FileSelect, Read_FileDisplay};

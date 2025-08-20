@@ -70,9 +70,12 @@ class Mode1View(ModeBase):
       - Renders a polar scatter and overlays detected object arcs
     """
 
-    def __init__(self, master: tk.Misc, controller: MSPController):
+    def __init__(self, master: tk.Misc, controller: MSPController, flash_integration: bool = False):
         super().__init__(master, controller, title="מצב 1 – Sonar Object Detector",
-                         enter_command="1", exit_command="8")
+                         enter_command="1" if not flash_integration else None, 
+                         exit_command="8")
+        self._flash_integration = flash_integration  # True when opened from flash mode
+        
         # Data model: distances per angle (None if missing)
         self._distances_cm: List[Optional[float]] = [None] * MAX_ANGLE_DEG
 
@@ -84,6 +87,9 @@ class Mode1View(ModeBase):
     # ----- ModeBase hooks -----
 
     def on_start(self) -> None:
+        # Clear any residual data from previous modes
+        self.controller.flush_input()
+        
         # Reset state
         self._distances_cm = [None] * MAX_ANGLE_DEG
 
@@ -98,6 +104,15 @@ class Mode1View(ModeBase):
 
         # Prepare batch for listener loop
         self._batch = AngleBatch()
+        
+        # Update status
+        self.update_status("Mode started - scanning for objects...")
+        
+        # Send acknowledgment when mode opens successfully
+        # This confirms that the mode has opened and is ready to receive data
+        if not self._flash_integration:  # Only send ack if not opened from flash (flash mode handles its own ack)
+            self.controller.send_ack()
+            logger.info("Mode 1 opened successfully, sent ack to controller")
 
     def on_stop(self) -> None:
         # Destroy canvas widget to free resources
@@ -106,8 +121,31 @@ class Mode1View(ModeBase):
         self.figure = None
         self.ax = None
         self.canvas = None
+        
+        # Send exit command
+        if self.exit_command:
+            self.controller.send_command(self.exit_command)
+            if not self._flash_integration:  # Only log for non-flash mode
+                logger.info("Mode 1 closed, sent '8' to controller - ready for new exe command")
+
+    def _handle_mode_close(self) -> None:
+        """Handle mode closure when '8' is received - runs in main thread to avoid thread joining issues."""
+        try:
+            # Stop the mode and return to flash
+            self.stop()
+            if self._back_cb:
+                self._back_cb()
+        except Exception as e:
+            logger.error(f"Error handling mode close: {e}")
 
     def handle_line(self, line: str) -> None:
+        # Check for '8' command from firmware when in flash integration mode
+        if self._flash_integration and line.strip() == "8":
+            logger.info("Sonar mode received '8' - scan finished, closing mode")
+            # Schedule the mode stop to run in the main thread to avoid thread joining issues
+            self.after(0, self._handle_mode_close)
+            return
+            
         # Parse "angle:micros"
         try:
             a_s, us_s = line.split(":")
@@ -117,17 +155,23 @@ class Mode1View(ModeBase):
             if not (0 <= angle < MAX_ANGLE_DEG) or dist_cm <= 0:
                 return
         except ValueError:
+            # Log non-matching lines for debugging
+            logger.debug(f"Mode1 received non-parseable line: '{line}'")
             return
 
         # Accumulate samples per angle
         b = self._batch
         if b.angle is None:
             b.reset(angle, dist_cm)
+            # Update status when starting a new angle
+            self.update_status(f"Scanning angle {angle}° - collecting samples...")
             return
 
         if angle != b.angle:
             self._finalize_batch()
             b.reset(angle, dist_cm)
+            # Update status when moving to new angle
+            self.update_status(f"Scanning angle {angle}° - collecting samples...")
             return
 
         b.add(dist_cm)
@@ -230,9 +274,9 @@ class Mode1View(ModeBase):
         from matplotlib.lines import Line2D
         from matplotlib.patches import Patch
         legend_elements = [
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='lime', markersize=8, label='🔍 Scan Points'),
-            Line2D([0], [0], color='red', linewidth=3, label='🎯 Detected Objects'),
-            Patch(facecolor='white', edgecolor='blue', alpha=0.6, label='📊 Object Info')
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='lime', markersize=8, label='* Scan Points'),
+            Line2D([0], [0], color='red', linewidth=3, label='-> Detected Objects'),
+            Patch(facecolor='white', edgecolor='blue', alpha=0.6, label='[i] Object Info')
         ]
         self.ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(0.02, 0.98), fontsize=10)
 

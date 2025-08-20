@@ -434,7 +434,13 @@ static void RunScript(void) {
                 }
                 
                 Telemeter();
-                ser_output("8");
+
+                // Wait for acknowledgment from PC before starting scan
+                                waitready = 0;
+                                while (!waitready) {
+                                    __bis_SR_register(LPM0_bits + GIE);  // Enter LPM0 with interrupts enabled
+                                }
+
                 break;
 
             case '7':  // servo_scan

@@ -84,6 +84,7 @@ class Mode5FlashView(ModeBase):
         self.lbl_type: Optional[tk.Label] = None
         self.lbl_size: Optional[tk.Label] = None
         self._busy = False  # simple guard to avoid double-sends
+        self._sub_mode_active = False  # Track if a sub-mode (Mode 1/2) is currently active
 
     # ----- Lifecycle -----
 
@@ -168,6 +169,10 @@ Note: The MSP430 has limited flash memory. Large files may not fit.
 
     def on_stop(self) -> None:
         self._busy = False  # allow next entry to write
+        
+        # Send exit command
+        if self.exit_command:
+            self.controller.send_command(self.exit_command)
 
     def handle_line(self, line: str) -> None:
         # Add debugging to see what we're receiving
@@ -185,12 +190,6 @@ Note: The MSP430 has limited flash memory. Large files may not fit.
             self._open_angle_mode()
             return
         
-        # Check if we're receiving "8" to close current mode and return to flash
-        if line.strip() == "8":
-            print("Received '8' - closing current mode and returning to flash!")
-            self._close_current_mode()
-            return
-            
         # Flash mode doesn't stream continuous data for 'write'; ignore other lines
         print(f"Flash mode ignoring line: {line}")
 
@@ -345,19 +344,25 @@ Note: The MSP430 has limited flash memory. Large files may not fit.
         if app and hasattr(app, 'navigate_to_menu'):
             print("Found main app, creating and mounting Mode 1 (Sonar)...")
             try:
-                # Create a new sonar mode view
-                sonar_view = Mode1View(app, self.controller)
-                sonar_view.set_back_callback(app.navigate_to_menu)
+                # Create a new sonar mode view with special handling for flash integration
+                sonar_view = Mode1View(app, self.controller, flash_integration=True)
                 
-                # Store reference to current flash view for returning later
-                if hasattr(app, '_active_view'):
-                    app._previous_flash_view = app._active_view
+                # Create a special callback that will handle both user stop and firmware '8'
+                def sonar_back_callback():
+                    print("Sonar mode back callback called")
+                    self._return_from_sub_mode(app)
+                
+                sonar_view.set_back_callback(sonar_back_callback)
                 
                 # Mount the sonar view using the app's _mount_view method
                 if hasattr(app, '_mount_view'):
                     app._mount_view(sonar_view)
                     sonar_view.start()
                     print("Successfully opened sonar mode!")
+                    
+                    # Send acknowledgment to controller that mode 1 has opened successfully
+                    self.controller.send_ack()
+                    print("Sent ack to controller for sonar mode opening")
                 else:
                     print("App doesn't have _mount_view method")
                     if self.lbl_status:
@@ -385,19 +390,25 @@ Note: The MSP430 has limited flash memory. Large files may not fit.
         if app and hasattr(app, 'navigate_to_menu'):
             print("Found main app, creating and mounting Mode 2 (Angle)...")
             try:
-                # Create a new angle mode view
-                angle_view = Mode2View(app, self.controller)
-                angle_view.set_back_callback(app.navigate_to_menu)
+                # Create a new angle mode view in script mode with special handling for flash integration
+                angle_view = Mode2View(app, self.controller, script_mode=True)
                 
-                # Store reference to current flash view for returning later
-                if hasattr(app, '_active_view'):
-                    app._previous_flash_view = app._active_view
+                # Create a special callback that will handle both user stop and firmware '8'
+                def angle_back_callback():
+                    print("Angle mode back callback called")
+                    self._return_from_sub_mode(app)
+                
+                angle_view.set_back_callback(angle_back_callback)
                 
                 # Mount the angle view using the app's _mount_view method
                 if hasattr(app, '_mount_view'):
                     app._mount_view(angle_view)
                     angle_view.start()
                     print("Successfully opened angle mode!")
+                    
+                    # Send acknowledgment to controller that mode 2 has opened successfully
+                    self.controller.send_ack()
+                    print("Sent ack to controller for angle mode opening")
                 else:
                     print("App doesn't have _mount_view method")
                     if self.lbl_status:
@@ -413,6 +424,25 @@ Note: The MSP430 has limited flash memory. Large files may not fit.
             if self.lbl_status:
                 self.lbl_status.config(text="Script requesting angle mode - please manually open Mode 2")
 
+    def _return_from_sub_mode(self, app) -> None:
+        """Helper method to return to flash mode from a sub-mode (when user presses stop or firmware sends '8')."""
+        print("_return_from_sub_mode called")
+        try:
+            # Create a new flash view to ensure clean state
+            flash_view = self.__class__(app, self.controller)
+            flash_view.set_back_callback(app.navigate_to_menu)
+            app._mount_view(flash_view)
+            flash_view.start()
+            print("Successfully returned to flash mode with new instance")
+            
+            # Send acknowledgment to controller that we're ready for next exe command
+            self.controller.send_ack()
+            print("Sent ack to controller after returning to flash mode")
+                
+        except Exception as e:
+            print(f"Error returning from sub-mode: {e}")
+            app.navigate_to_menu()
+
     def _close_current_mode(self) -> None:
         """Close current mode (sonar/angle) and return to flash mode when '8' is received."""
         print("_close_current_mode called!")
@@ -424,30 +454,35 @@ Note: The MSP430 has limited flash memory. Large files may not fit.
         
         if app and hasattr(app, '_mount_view'):
             print("Found main app, returning to flash mode...")
-            try:
-                # Check if we stored a previous flash view
-                if hasattr(app, '_previous_flash_view') and app._previous_flash_view:
-                    print("Restoring previous flash view...")
-                    # Restore the previous flash view
-                    flash_view = app._previous_flash_view
-                    app._mount_view(flash_view)
-                    # Clear the stored reference
-                    app._previous_flash_view = None
-                else:
-                    print("Creating new flash view...")
-                    # Create a new flash view if no previous one stored
-                    flash_view = self.__class__(app, self.controller)
-                    flash_view.set_back_callback(app.navigate_to_menu)
-                    app._mount_view(flash_view)
-                    flash_view.start()
-                
-                print("Successfully returned to flash mode!")
-                
-            except Exception as e:
-                print(f"Error returning to flash mode: {e}")
-                # Fallback to menu
-                app.navigate_to_menu()
+            self._return_from_sub_mode(app)
         else:
             print("Could not find main app reference, returning to menu")
             if app and hasattr(app, 'navigate_to_menu'):
                 app.navigate_to_menu()
+
+    def _return_to_flash_mode(self, app) -> None:
+        """Helper method to return to flash mode from a sub-mode."""
+        try:
+            # Check if we stored a previous flash view
+            if hasattr(app, '_previous_flash_view') and app._previous_flash_view:
+                print("Restoring previous flash view...")
+                # Restore the previous flash view
+                flash_view = app._previous_flash_view
+                app._mount_view(flash_view)
+                flash_view.start()
+                # Clear the stored reference
+                app._previous_flash_view = None
+            else:
+                print("Creating new flash view...")
+                # Create a new flash view if no previous one stored
+                flash_view = self.__class__(app, self.controller)
+                flash_view.set_back_callback(app.navigate_to_menu)
+                app._mount_view(flash_view)
+                flash_view.start()
+            
+            print("Successfully returned to flash mode!")
+            
+        except Exception as e:
+            print(f"Error returning to flash mode: {e}")
+            # Fallback to menu
+            app.navigate_to_menu()

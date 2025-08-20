@@ -6,6 +6,7 @@
 
 #define FLASH_SEGMENT_ADDR 0xF000
 #define FLASH_SEGMENT_SIZE 512
+#define FILES_STRUCT_FLASH_ADDR 0xE000  // Flash address for storing Files struct metadata
 
 extern void ScriptData(void);
 extern void SetPtrData(void);
@@ -27,6 +28,9 @@ extern void set_next_file_ptr(short idx);
 extern void save_LDR(unsigned int measurement, unsigned int counter);
 // Track current write position for each file
 extern char* current_write_positions[10];
+// Flash persistence functions
+extern void upload_files_from_flash(void);    // Load Files struct from flash at startup
+extern void download_files_to_flash(void);    // Save Files struct to flash after writing
 #endif /* HEADER_FLASH_H_ */
 
 

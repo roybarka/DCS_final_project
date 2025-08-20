@@ -79,8 +79,11 @@ class ModeBase(tk.Frame):
             # Flush any stray lines from the previous mode before switching
             try:
                 self.controller.flush_input()
-            except Exception:
-                pass
+                # Small delay to ensure buffer is cleared
+                import time
+                time.sleep(0.1)
+            except Exception as e:
+                logger.warning("Error flushing input buffer: %s", e)
             self.controller.send_command(self.enter_command)
 
         self.on_start()
@@ -94,18 +97,29 @@ class ModeBase(tk.Frame):
 
     def stop(self) -> None:
         """
-        Stop the mode: send exit command, signal thread to stop, join, cleanup.
+        Stop the mode: signal thread to stop, join, cleanup, then send exit command.
         """
         logger.info("Stopping mode: %s", self.__class__.__name__)
-        if self.exit_command:
-            self.controller.send_command(self.exit_command)
-
+        
+        # Signal stop and wait for thread
         self._stop_event.set()
         if self._listener_thread:
             self._listener_thread.join(timeout=2.0)
+            if self._listener_thread.is_alive():
+                logger.warning("Listener thread did not stop cleanly")
             self._listener_thread = None
 
-        self.on_stop()
+        # Call subclass cleanup (this may send exit command)
+        try:
+            self.on_stop()
+        except Exception as e:
+            logger.warning("Error in on_stop: %s", e)
+            
+        # Final buffer flush to clear any remaining data
+        try:
+            self.controller.flush_input()
+        except Exception as e:
+            logger.warning("Error flushing on stop: %s", e)
 
     def _on_back_pressed(self) -> None:
         """
@@ -118,14 +132,19 @@ class ModeBase(tk.Frame):
     # ----- Thread & render loop -----
 
     def _listen_loop(self) -> None:
+        logger.debug(f"Starting listener thread for {self.__class__.__name__}")
+        line_count = 0
         while not self._stop_event.is_set():
             line = self.controller.read_line()
             if not line:
                 continue
+            line_count += 1
+            logger.debug(f"{self.__class__.__name__} received line #{line_count}: '{line}'")
             try:
                 self.handle_line(line)
             except Exception as e:
-                logger.warning("handle_line error: %s", e)
+                logger.warning("handle_line error in %s: %s", self.__class__.__name__, e)
+        logger.debug(f"Listener thread for {self.__class__.__name__} stopping after {line_count} lines")
 
     def _tick(self) -> None:
         if not self.winfo_ismapped():

@@ -24,7 +24,7 @@ class Mode6LDRCalibView(ModeBase):
         self._done = False
         # Predefined distances for each calibration step (1..10)
         # Distances per step (consistent with ldr_utils: 3,6,...,30 cm)
-        self._distances_cm = [3 * i for i in range(1, 11)]
+        self._distances_cm = [5 * i for i in range(1, 11)]
         self._next_step = 1  # what we instruct the user to do next
 
     # --- ModeBase hooks ---
@@ -83,7 +83,9 @@ class Mode6LDRCalibView(ModeBase):
         self._update_progress()
 
     def on_stop(self) -> None:
-        pass
+        # Send exit command
+        if self.exit_command:
+            self.controller.send_command(self.exit_command)
 
     def handle_line(self, line: str) -> None:
         """Handle MCU progress lines: "6:<step>" or "6:DONE"."""

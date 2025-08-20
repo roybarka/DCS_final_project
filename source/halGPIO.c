@@ -258,7 +258,11 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
                     }
                     j = 0; 
                 }
-                if (DataFromPC[0] == '8') { flash_state = Flash_SelectOp; j = 0; Main = Flash;}
+                if (DataFromPC[0] == '8' || DataFromPC[0] == '5') {
+                    exit_flag = 1;
+                    //flash_state = Flash_SelectOp;
+                    j = 0; Main = Flash;
+                }
                 break;
 
             case Flash_Writing:
@@ -266,6 +270,31 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
                 static short current_file_index = 0;   // select slot 0 for now
                 static unsigned int expected_size = 0; // number of bytes to receive
                 static unsigned int received_size = 0; // progress counter
+                
+                // Handle Write_Complete state first (when we're already in this state)
+                if (write_stage == Write_Complete) {
+                    // Save the updated Files struct to flash
+                    download_files_to_flash();
+                    
+                    // Advance counters for next file
+                    if (file.num_of_files < 10) {
+                        if (current_file_index >= file.num_of_files) {
+                            file.num_of_files = current_file_index + 1;
+                        }
+                        if (current_file_index < 9) {
+                            current_file_index++;
+                        }
+                    }
+                    
+                    // Reset to wait for next file
+                    flash_state = Flash_SelectOp;
+                    write_stage = Write_WaitName;
+                    Main = Flash;
+                    j = 0;
+                    break;
+                }
+                
+                // Handle data input for other states
                 if (DataFromPC[j-1] == RX_EOF_CHAR || DataFromPC[j-1] == EOF_CHAR || j == RX_BUF_SIZE) {
                     switch (write_stage) {
                         case Write_WaitName:
@@ -322,7 +351,7 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
                                     received_size = 0;
                                 }
                             } else if (DataFromPC[j-1] == EOF_CHAR) {
-                                // End of file - write final chunk and advance to next file
+                                // End of file - write final chunk and move to completion state
                                 unsigned int chunk_len = (unsigned int)(j - 1);
                                 if (received_size + chunk_len > expected_size) {
                                     chunk_len = expected_size - received_size;
@@ -333,18 +362,8 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
                                 // Write final data to flash
                                 copy_seg_flash_for_index(current_file_index, file_content, received_size);
 
-                                // Advance counters for next file
-                                if (file.num_of_files < 10) {
-                                    if (current_file_index >= file.num_of_files) {
-                                        file.num_of_files = current_file_index + 1;
-                                    }
-                                    if (current_file_index < 9) {
-                                        current_file_index++;
-                                    }
-                                }
-                                flash_state = Flash_SelectOp;
-                                write_stage = Write_WaitName;
-                                Main = Flash;
+                                // Move to completion state
+                                write_stage = Write_Complete;
                                 j = 0;
                             }
                             break;
@@ -358,7 +377,7 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
 
 
 
-
+    /*
     switch(lpm_mode){
     case mode0: LPM0_EXIT; break;
     case mode1: LPM1_EXIT; break;
@@ -366,6 +385,8 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
     case mode3: LPM3_EXIT; break;
     case mode4: LPM4_EXIT; break;
     }
+    */
+    LPM0_EXIT;
 }
 
 
@@ -414,6 +435,7 @@ void sysConfig(void){
     lcd_clear();
     UART_init();
     ADCconfig();
+    upload_files_from_flash();  // Load previous file structure from flash
     __bis_SR_register(GIE);    // enable global interrupts
 }
 
