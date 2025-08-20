@@ -136,6 +136,11 @@ class Mode4ObjectAndLightDetectorView(ModeBase):
         self._batch = CombinedBatch()
         self._calib_lines = 0
         self._status_var.set("Awaiting calibration...")
+        
+        # Send acknowledgment to indicate we're ready to receive data
+        # This confirms that the mode has opened successfully
+        self.controller.send_ack()
+        logger.info("Mode 4 opened successfully, sent ack to controller")
 
     def on_stop(self) -> None:
         if self.canvas:
@@ -151,6 +156,10 @@ class Mode4ObjectAndLightDetectorView(ModeBase):
         self._ldr_sat = [False] * MAX_ANGLE_DEG
         self._batch = CombinedBatch()
         self._status_var.set("Awaiting calibration...")
+        
+        # Send 8 to controller to indicate mode is closed and ready for new exe command
+        self.controller.send_command('8')
+        logger.info("Mode 4 closed, sent '8' to controller - ready for new exe command")
 
     def handle_line(self, line: str) -> None:
         # Calibration: 10 lines 'idx:value'

@@ -97,20 +97,10 @@ class ModeBase(tk.Frame):
 
     def stop(self) -> None:
         """
-        Stop the mode: send exit command, signal thread to stop, join, cleanup.
+        Stop the mode: signal thread to stop, join, cleanup, then send exit command.
         """
         logger.info("Stopping mode: %s", self.__class__.__name__)
         
-        # Send exit command first
-        if self.exit_command:
-            try:
-                self.controller.send_command(self.exit_command)
-                # Small delay to ensure command is sent
-                import time
-                time.sleep(0.1)
-            except Exception as e:
-                logger.warning("Error sending exit command: %s", e)
-
         # Signal stop and wait for thread
         self._stop_event.set()
         if self._listener_thread:
@@ -119,7 +109,7 @@ class ModeBase(tk.Frame):
                 logger.warning("Listener thread did not stop cleanly")
             self._listener_thread = None
 
-        # Call subclass cleanup
+        # Call subclass cleanup (this may send exit command)
         try:
             self.on_stop()
         except Exception as e:

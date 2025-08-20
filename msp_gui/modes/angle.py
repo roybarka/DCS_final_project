@@ -128,6 +128,11 @@ class Mode2View(ModeBase):
             # Send initial angle command
             self.controller.send_command('2')                 # no newline
             self.controller.send_command(f"{initial}\n")      # angle with newline
+        
+        # Send acknowledgment to indicate we're ready to receive data
+        # This confirms that the mode has opened successfully
+        self.controller.send_ack()
+        logger.info("Mode 2 opened successfully, sent ack to controller")
 
     def on_stop(self) -> None:
         if self.canvas:
@@ -137,6 +142,20 @@ class Mode2View(ModeBase):
         self.canvas = None
         self._recent_cm.clear()
         self._current_angle = None
+        
+        # Send 8 to controller to indicate mode is closed and ready for new exe command
+        self.controller.send_command('8')
+        logger.info("Mode 2 closed, sent '8' to controller - ready for new exe command")
+
+    def _handle_mode_close(self) -> None:
+        """Handle mode closure when '8' is received - runs in main thread to avoid thread joining issues."""
+        try:
+            # Stop the mode and return to flash
+            self.stop()
+            if self._back_cb:
+                self._back_cb()
+        except Exception as e:
+            logger.error(f"Error handling mode close: {e}")
 
     def handle_line(self, line: str) -> None:
         """Expect 'angle:micros' and accept samples based on mode."""
@@ -144,10 +163,8 @@ class Mode2View(ModeBase):
         # Check for '8' command from firmware when in flash integration mode (though servo_deg doesn't auto-end)
         if self._script_mode and line.strip() == "8":
             logger.info("Angle mode received '8' - operation finished, closing mode")
-            # Stop the mode and return to flash
-            self.stop()
-            if self._back_cb:
-                self._back_cb()
+            # Schedule the mode stop to run in the main thread to avoid thread joining issues
+            self.after(0, self._handle_mode_close)
             return
             
         try:

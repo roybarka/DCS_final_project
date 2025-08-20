@@ -48,6 +48,16 @@ class MSPController:
         except Exception as e:
             logger.warning("Serial write error: %s", e)
 
+    def send_ack(self) -> None:
+        """
+        Send an acknowledgment to the device. Used to confirm readiness to receive data.
+        """
+        try:
+            self.ser.write(b"ack\n")
+            logger.debug("Sent acknowledgment")
+        except Exception as e:
+            logger.warning("Serial write error sending ack: %s", e)
+
     def close(self) -> None:
         try:
             self.ser.close()

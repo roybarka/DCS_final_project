@@ -107,6 +107,12 @@ class Mode1View(ModeBase):
         
         # Update status
         self.update_status("Mode started - scanning for objects...")
+        
+        # Send acknowledgment when mode opens successfully
+        # This confirms that the mode has opened and is ready to receive data
+        if not self._flash_integration:  # Only send ack if not opened from flash (flash mode handles its own ack)
+            self.controller.send_ack()
+            logger.info("Mode 1 opened successfully, sent ack to controller")
 
     def on_stop(self) -> None:
         # Destroy canvas widget to free resources
@@ -115,15 +121,29 @@ class Mode1View(ModeBase):
         self.figure = None
         self.ax = None
         self.canvas = None
+        
+        # Send exit command
+        if self.exit_command:
+            self.controller.send_command(self.exit_command)
+            if not self._flash_integration:  # Only log for non-flash mode
+                logger.info("Mode 1 closed, sent '8' to controller - ready for new exe command")
+
+    def _handle_mode_close(self) -> None:
+        """Handle mode closure when '8' is received - runs in main thread to avoid thread joining issues."""
+        try:
+            # Stop the mode and return to flash
+            self.stop()
+            if self._back_cb:
+                self._back_cb()
+        except Exception as e:
+            logger.error(f"Error handling mode close: {e}")
 
     def handle_line(self, line: str) -> None:
         # Check for '8' command from firmware when in flash integration mode
         if self._flash_integration and line.strip() == "8":
             logger.info("Sonar mode received '8' - scan finished, closing mode")
-            # Stop the mode and return to flash
-            self.stop()
-            if self._back_cb:
-                self._back_cb()
+            # Schedule the mode stop to run in the main thread to avoid thread joining issues
+            self.after(0, self._handle_mode_close)
             return
             
         # Parse "angle:micros"

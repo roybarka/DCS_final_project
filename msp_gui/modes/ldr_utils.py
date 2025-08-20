@@ -5,7 +5,7 @@ LDR calibration and value-to-distance conversion utilities.
 from typing import List, Optional
 
 # Fixed mapping of indices 0..9 to distances in cm (now 3..30)
-DISTANCES: List[int] = [3 * (i + 1) for i in range(10)]  # 3,6,...,30
+DISTANCES: List[int] = [5 * (i + 1) for i in range(10)]  # 3,6,...,30
 
 
 class LDRCalibration:

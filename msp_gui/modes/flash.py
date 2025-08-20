@@ -169,6 +169,10 @@ Note: The MSP430 has limited flash memory. Large files may not fit.
 
     def on_stop(self) -> None:
         self._busy = False  # allow next entry to write
+        
+        # Send exit command
+        if self.exit_command:
+            self.controller.send_command(self.exit_command)
 
     def handle_line(self, line: str) -> None:
         # Add debugging to see what we're receiving
@@ -355,6 +359,10 @@ Note: The MSP430 has limited flash memory. Large files may not fit.
                     app._mount_view(sonar_view)
                     sonar_view.start()
                     print("Successfully opened sonar mode!")
+                    
+                    # Send acknowledgment to controller that mode 1 has opened successfully
+                    self.controller.send_ack()
+                    print("Sent ack to controller for sonar mode opening")
                 else:
                     print("App doesn't have _mount_view method")
                     if self.lbl_status:
@@ -397,6 +405,10 @@ Note: The MSP430 has limited flash memory. Large files may not fit.
                     app._mount_view(angle_view)
                     angle_view.start()
                     print("Successfully opened angle mode!")
+                    
+                    # Send acknowledgment to controller that mode 2 has opened successfully
+                    self.controller.send_ack()
+                    print("Sent ack to controller for angle mode opening")
                 else:
                     print("App doesn't have _mount_view method")
                     if self.lbl_status:
@@ -422,6 +434,10 @@ Note: The MSP430 has limited flash memory. Large files may not fit.
             app._mount_view(flash_view)
             flash_view.start()
             print("Successfully returned to flash mode with new instance")
+            
+            # Send acknowledgment to controller that we're ready for next exe command
+            self.controller.send_ack()
+            print("Sent ack to controller after returning to flash mode")
                 
         except Exception as e:
             print(f"Error returning from sub-mode: {e}")

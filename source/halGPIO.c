@@ -20,6 +20,7 @@ volatile unsigned char display_update_req = 0;   // Flag to indicate display nee
 volatile float diff;
 volatile unsigned char pb_pressed = 0;
 volatile unsigned int measureCounter = 0;
+volatile unsigned char waitready = 0;
 volatile unsigned int deg = 0;
 volatile unsigned int deg_duty_cycle = 0;
 volatile int meas_ready;
@@ -249,9 +250,19 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
                 break;
 
             case Flash_Executing:
-                // Placeholder: upon newline, return to selector
-                if (DataFromPC[j-1] == RX_EOF_CHAR) { flash_state = Flash_SelectOp; j = 0; }
-                if (DataFromPC[0] == '8') { flash_state = Flash_SelectOp; j = 0; Main = Flash;}
+                // Handle acknowledgment from PC for servo operations
+                if (DataFromPC[j-1] == RX_EOF_CHAR) { 
+                    // Check if this is an acknowledgment message
+                    if (DataFromPC[0] == 'a' && DataFromPC[1] == 'c' && DataFromPC[2] == 'k') {
+                        waitready = 1;  // Set the acknowledgment flag
+                    }
+                    j = 0; 
+                }
+                if (DataFromPC[0] == '8' || DataFromPC[0] == '5') {
+                    exit_flag = 1;
+                    //flash_state = Flash_SelectOp;
+                    j = 0; Main = Flash;
+                }
                 break;
 
             case Flash_Writing:
@@ -351,7 +362,7 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
 
 
 
-
+    /*
     switch(lpm_mode){
     case mode0: LPM0_EXIT; break;
     case mode1: LPM1_EXIT; break;
@@ -359,6 +370,8 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
     case mode3: LPM3_EXIT; break;
     case mode4: LPM4_EXIT; break;
     }
+    */
+    LPM0_EXIT;
 }
 
 

@@ -426,7 +426,21 @@ static void RunScript(void) {
                 ltoa(X, deg_array);
                 IE2 |= UCA0TXIFG;
                 ser_output("2"); ser_output(newline);
+                
+                // Wait for acknowledgment from PC before starting
+                waitready = 0;
+                while (!waitready) {
+                    __bis_SR_register(LPM0_bits + GIE);  // Enter LPM0 with interrupts enabled
+                }
+                
                 Telemeter();
+
+                // Wait for acknowledgment from PC before starting scan
+                                waitready = 0;
+                                while (!waitready) {
+                                    __bis_SR_register(LPM0_bits + GIE);  // Enter LPM0 with interrupts enabled
+                                }
+
                 break;
 
             case '7':  // servo_scan
@@ -443,12 +457,24 @@ static void RunScript(void) {
                 ser_output("1");
                 ser_output(newline);
                 
+                // Wait for acknowledgment from PC before starting scan
+                waitready = 0;
+                while (!waitready) {
+                    __bis_SR_register(LPM0_bits + GIE);  // Enter LPM0 with interrupts enabled
+                }
+                
                 // Call servo scan function
                 Servo_Scan(start, stop);
                 
                 // Send '8' to PC to signal scan is finished - close sonar GUI
                 ser_output("8");
                 ser_output(newline);
+                
+                // Wait for acknowledgment from PC after sending '8'
+                waitready = 0;
+                while (!waitready) {
+                    __bis_SR_register(LPM0_bits + GIE);  // Enter LPM0 with interrupts enabled
+                }
                 break;
 
             case '8':  // sleep
