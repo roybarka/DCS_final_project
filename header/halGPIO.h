@@ -37,6 +37,7 @@ extern char DataFromPC[RX_BUF_SIZE];
 extern char file_content[RX_BUF_SIZE];
 extern volatile unsigned char pb_pressed;
 extern volatile unsigned int measureCounter;
+extern volatile unsigned char waitready;
 
 // =================== PUBLIC HAL/API ===================
 void sysConfig(void);

@@ -20,6 +20,7 @@ volatile unsigned char display_update_req = 0;   // Flag to indicate display nee
 volatile float diff;
 volatile unsigned char pb_pressed = 0;
 volatile unsigned int measureCounter = 0;
+volatile unsigned char waitready = 0;
 volatile unsigned int deg = 0;
 volatile unsigned int deg_duty_cycle = 0;
 volatile int meas_ready;
@@ -173,8 +174,6 @@ void __attribute__ ((interrupt(USCIAB0TX_VECTOR))) USCI0TX_ISR (void)
 #error Compiler not supported!
 #endif
 {
-    if(state == state5) UCA0TXBUF = '5';
-    if(state == state9) UCA0TXBUF = '9';
     IE2 &= ~UCA0TXIE;                       // Disable USCI_A0 TX interrupt
 }
 
@@ -251,8 +250,14 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
                 break;
 
             case Flash_Executing:
-                // Placeholder: upon newline, return to selector
-                if (DataFromPC[j-1] == RX_EOF_CHAR) { flash_state = Flash_SelectOp; j = 0; }
+                // Handle acknowledgment from PC for servo operations
+                if (DataFromPC[j-1] == RX_EOF_CHAR) { 
+                    // Check if this is an acknowledgment message
+                    if (DataFromPC[0] == 'a' && DataFromPC[1] == 'c' && DataFromPC[2] == 'k') {
+                        waitready = 1;  // Set the acknowledgment flag
+                    }
+                    j = 0; 
+                }
                 if (DataFromPC[0] == '8') { flash_state = Flash_SelectOp; j = 0; Main = Flash;}
                 break;
 
@@ -491,7 +496,7 @@ unsigned int send_trigger_pulse(void)
     unsigned int safety_counter = 0;
     while (!measure_done && safety_counter < 50000) { // Added safety timeout
         __bis_SR_register(LPM0_bits | GIE);  // Enter low power mode with interrupts enabled
-        safety_counter++;  // Increment safety counter
+
     }
     
     // If we reached the safety counter limit, set measure_done to timeout
